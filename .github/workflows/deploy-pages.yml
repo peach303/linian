@@ -20,6 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+        with:
+          # 第一次部署时自动把 Pages 打开，省得再去 Settings 里点一遍
+          enablement: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
