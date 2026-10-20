@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import clsx from 'clsx'
 import { NavBar } from '@/components/common/NavBar'
+import { pickImage, shrinkImageDataUrl } from '@/lib/file'
 import { nid } from '@/lib/ids'
 import { fromNow } from '@/lib/time'
 import { favoriteFromLetter } from '@/lib/favorites'
 import { useAppStore } from '@/store/useAppStore'
+import { useViewerStore } from '@/store/useViewerStore'
 import type { Letter } from '@/types'
 
 /**
@@ -19,8 +21,15 @@ export function MailboxScreen() {
   const favorites = useAppStore((s) => s.favorites)
   const addFavorite = useAppStore((s) => s.addFavorite)
   const removeFavorite = useAppStore((s) => s.removeFavorite)
+  const openImage = useViewerStore((s) => s.openImage)
   const [openId, setOpenId] = useState<string | null>(null)
-  const [compose, setCompose] = useState<{ title: string; body: string; replyToId?: string } | null>(null)
+  const [compose, setCompose] = useState<{
+    title: string
+    body: string
+    replyToId?: string
+    images: string[]
+  } | null>(null)
+  const [composeErr, setComposeErr] = useState('')
 
   const nameOf = (id: string) => (id === me.id ? me.nickname : dream.nickname)
   const list = [...letters].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
@@ -46,10 +55,40 @@ export function MailboxScreen() {
       status: 'PENDING',
       replyToId: compose.replyToId,
       annotations: [],
+      images: compose.images,
       createdAt: new Date().toISOString(),
     })
     setCompose(null)
     setOpenId(null)
+    setComposeErr('')
+  }
+
+  const addLetterImages = () => {
+    if (!compose) return
+    if (compose.images.length >= 6) {
+      setComposeErr('一封信最多附 6 张照片。')
+      return
+    }
+    setComposeErr('')
+    pickImage(
+      async (url) => {
+        try {
+          const small = await shrinkImageDataUrl(url)
+          setCompose((prev) =>
+            prev && prev.images.length < 6 ? { ...prev, images: [...prev.images, small] } : prev,
+          )
+        } catch {
+          setComposeErr('这张照片没处理成功，换一张试试。')
+        }
+      },
+      undefined,
+      { staticOnly: true, maxBytes: 12 * 1024 * 1024, onError: setComposeErr },
+    )
+  }
+
+  const removeLetterImage = (index: number) => {
+    if (!compose) return
+    setCompose({ ...compose, images: compose.images.filter((_, i) => i !== index) })
   }
 
   /* ───────────────────── 写信 / 回信 ───────────────────── */
@@ -82,6 +121,39 @@ export function MailboxScreen() {
             onChange={(e) => setCompose({ ...compose, body: e.target.value })}
             className="w-full resize-none rounded-xl bg-surface px-3 py-3 text-[15px] leading-[1.9] text-ink outline-none ring-1 ring-hairline focus:ring-brand placeholder:text-ink-faint"
           />
+
+          <div className="rounded-xl bg-surface p-2.5 ring-1 ring-hairline">
+            <div className="flex items-center">
+              <span className="text-[12px] text-ink-sub">随信照片（可选）</span>
+              <span className="ml-1 text-[10px] text-ink-faint">{compose.images.length}/6</span>
+              <button
+                type="button"
+                className="tap ml-auto rounded-lg bg-page px-2.5 py-1 text-[11px] text-ink-sub"
+                onClick={addLetterImages}
+              >
+                ＋ 添加
+              </button>
+            </div>
+            {compose.images.length > 0 && (
+              <div className="mt-2 grid grid-cols-4 gap-1.5">
+                {compose.images.map((src, i) => (
+                  <div key={i} className="relative aspect-square overflow-hidden rounded-md">
+                    <img src={src} alt={`随信照片 ${i + 1}`} className="h-full w-full object-cover" draggable={false} />
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/55 text-[11px] leading-none text-white"
+                      onClick={() => removeLetterImage(i)}
+                      aria-label={`移除第 ${i + 1} 张照片`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="mt-1.5 text-[10px] leading-relaxed text-ink-faint">照片只存在本机，会跟着信件一起保存。</p>
+          </div>
+          {composeErr && <p className="px-1 text-[11px] text-[#e0533d]">{composeErr}</p>}
           <p className="px-1 text-[11px] leading-relaxed text-ink-faint">
             他会读，也可能用蓝笔在上面写批注；会不会回信、多久回，看 设置 → 概率调节引擎 → 信箱。
           </p>
@@ -110,6 +182,7 @@ export function MailboxScreen() {
                     title: `回信 · ${open.title}`,
                     body: `${dream.nickname}：\n\n`,
                     replyToId: open.id,
+                    images: [],
                   })
                 }
               >
@@ -157,6 +230,30 @@ export function MailboxScreen() {
                     ✎ {a.text}
                   </p>
                 ))}
+              </div>
+            )}
+            {/* 随信照片：点开全屏 */}
+            {!!open.images?.length && (
+              <div className="mt-4 border-t border-dashed border-hairline pt-3">
+                <p className="text-[11px] text-ink-faint">随信附上的照片 · 点开看大图</p>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  {open.images.map((src, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="tap overflow-hidden rounded-md"
+                      onClick={() => openImage(src, `信件照片 ${i + 1}`)}
+                      aria-label={`查看信件照片 ${i + 1}`}
+                    >
+                      <img
+                        src={src}
+                        alt={`信件照片 ${i + 1}`}
+                        className="aspect-square w-full object-cover"
+                        draggable={false}
+                      />
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </article>
@@ -212,7 +309,10 @@ export function MailboxScreen() {
         right={
           <button
             className="tap grid h-8 w-8 place-items-center rounded text-[18px] text-ink-sub"
-            onClick={() => setCompose({ title: '', body: '' })}
+            onClick={() => {
+              setComposeErr('')
+              setCompose({ title: '', body: '', images: [] })
+            }}
             aria-label="写一封信"
           >
             ✎
@@ -263,6 +363,7 @@ export function MailboxScreen() {
                 <span className="rounded-full bg-brand-soft/60 px-1.5 py-0.5 text-brand-deep">
                   {mine ? myLetterState(l) : l.status === 'UNREAD' ? '未读' : '已读'}
                 </span>
+                {!!l.images?.length && <span>📷 {l.images.length}</span>}
                 {!!l.annotations.length && (
                   <span className="ml-auto font-hand text-[13px] text-brand-deep">
                     {l.annotations.length} 处蓝色批注

@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useState } from 'react'
 import { clipFromMessage, removeClip } from '@/lib/voiceFav'
 import { favoriteFromMessage, pickFavoriteReason } from '@/lib/favorites'
+import { ABOUT_LABEL, MEANING_SOURCE_LABEL, deriveMeaning } from '@/lib/engine/meaning'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
 import type { Message } from '@/types'
@@ -26,6 +27,7 @@ export function MessageActionSheet({
   /** 收藏的那点事（收藏完给个回执，不静默） */
   const [note, setNote] = useState('')
   const recall = useChatStore((s) => s.recall)
+  const patchMessage = useChatStore((s) => s.patchMessage)
   const setQuote = useChatStore((s) => s.setQuote)
   const clips = useAppStore((s) => s.voices)
   const addVoice = useAppStore((s) => s.addVoice)
@@ -36,6 +38,13 @@ export function MessageActionSheet({
 
   const canRecall = mine && message.status !== 'RECALLED'
   const canQuote = !mine && Boolean(message.text)
+  /** 他发的话（文字 / 字卡 / 图片 / 语音）都可以问本意；系统提示和拍一拍不问 */
+  const canAskMeaning =
+    !mine &&
+    message.status !== 'RECALLED' &&
+    message.kind !== 'SYSTEM' &&
+    message.kind !== 'PAT' &&
+    message.kind !== 'CALL_EVENT'
   const plan = message.plan
   /** 语音消息（且真的带音频）才能收藏 */
   const canFav = message.kind === 'VOICE' && Boolean(String(message.payload?.url ?? message.audioUrl ?? ''))
@@ -137,6 +146,26 @@ export function MessageActionSheet({
           {mine ? '我' : '他'}：{message.text?.slice(0, 24) ?? '（无文字）'}
         </div>
         {note && <div className="border-b border-hairline bg-page px-4 py-2 text-[11px] leading-snug text-ink-sub">{note}</div>}
+        {canAskMeaning &&
+          row('这句话在说谁？', () => {
+            const info = deriveMeaning(message)
+            patchMessage(message.id, {
+              about: info.about,
+              meaningSource: info.source,
+            })
+            setNote(`他说的是：${ABOUT_LABEL[info.about]}（${MEANING_SOURCE_LABEL[info.source]}）`)
+          })}
+        {canAskMeaning &&
+          row('问他的本意', () => {
+            const info = deriveMeaning(message)
+            patchMessage(message.id, {
+              meaning: info.meaning,
+              about: message.about ?? info.about,
+              meaningSource: info.source,
+              meaningAsked: true,
+            })
+            setNote(`本意：${info.meaning}（来源：${MEANING_SOURCE_LABEL[info.source]}）`)
+          })}
         {canQuote &&
           row('引用这条回复他', () => {
             setQuote(message)

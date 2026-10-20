@@ -180,7 +180,11 @@ export function CardLibraryScreen() {
 
             {g.items.length === 0 ? (
               <div className="rounded-xl bg-surface px-3 py-4 text-center text-[12px] text-ink-faint shadow-card">
-                {g.meta.key === 'IMAGE' ? '还没有图片字卡，点右上角「导入」或管理里新增' : '这一类还没有字卡'}
+                {g.meta.key === 'IMAGE'
+                  ? '还没有图片字卡，点右上角「导入」或管理里新增'
+                  : g.meta.key === 'STICKER'
+                    ? '还没有表情包，点右上角「导入」或管理里新增，能上传 GIF / 动图'
+                    : '这一类还没有字卡'}
               </div>
             ) : (
               <ul className="divide-y divide-hairline overflow-hidden rounded-xl bg-surface shadow-card">
@@ -286,7 +290,7 @@ function CardRow({
 }) {
   const st = useCardsStore()
   const meta = typeMeta(card.type)
-  const isImage = card.type === 'IMAGE'
+  const isMediaCard = card.type === 'IMAGE' || card.type === 'STICKER'
 
   return (
     <li className={clsx('flex items-center gap-2.5 px-3 py-2.5', !card.enabled && 'opacity-55')}>
@@ -307,7 +311,7 @@ function CardRow({
           className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg text-[15px] ring-1 ring-hairline"
           style={{ background: `${meta.color}22` }}
         >
-          {isImage && card.mediaUrl ? (
+          {isMediaCard && card.mediaUrl ? (
             <img src={card.mediaUrl} alt="" className="h-full w-full object-cover" />
           ) : (
             meta.icon
@@ -317,7 +321,7 @@ function CardRow({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-[14px] text-ink">
-              {card.text || (isImage ? '（图片卡）' : '（空）')}
+              {card.text || (isMediaCard ? (card.type === 'STICKER' ? '（表情包）' : '（图片卡）') : '（空）')}
             </span>
             {card.noFreeSentence && (
               <span className="shrink-0 rounded bg-page px-1 py-0.5 text-[10px] leading-none text-ink-faint ring-1 ring-hairline">

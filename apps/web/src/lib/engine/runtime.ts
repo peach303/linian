@@ -9,6 +9,7 @@
 import { planReply } from './planner'
 import type { PlannedItem, ReplyPlan } from './planner'
 import { isCardKind, isQuietKind } from './cards'
+import { maybeAttachMeaning } from './meaning'
 import { interruptedByReply, inQuietHours, dailyQuota, nextProactiveAt, proactiveCountToday } from './proactive'
 import { useAppStore } from '@/store/useAppStore'
 import { useCardsStore } from '@/store/useCardsStore'
@@ -103,13 +104,14 @@ function emit(
     createdAt: new Date().toISOString(),
   }
 
-  chat.pushMessage(msg)
+  const enriched = maybeAttachMeaning(msg, useRulesStore.getState().saved.chat.meaning.p)
+  chat.pushMessage(enriched)
 
   if (item.recallAfterMs) {
     laterHouse(item.recallAfterMs, () => useChatStore.getState().recall(msg.id))
   }
   void plan
-  return msg
+  return enriched
 }
 
 /* ───────────────────────── MiniMax 语音 ───────────────────────── */

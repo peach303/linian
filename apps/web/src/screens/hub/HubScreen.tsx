@@ -19,6 +19,7 @@ const FEATURES: { key: string; label: string; icon: string; desc: string; screen
   { key: 'music', label: '音乐', icon: '🎧', desc: '一起听了多久', screen: 'music-room' },
   { key: 'gift', label: '礼物', icon: '🎁', desc: '与聊天互通', screen: 'gift-cabinet' },
   { key: 'companion', label: '陪伴', icon: '🌙', desc: '睡觉 / 学习 / 工作', screen: 'companion' },
+  { key: 'outfit', label: '穿搭', icon: '👕', desc: '他今天穿什么', screen: 'outfit' },
   { key: 'world', label: '世界感知', icon: '🌍', desc: '时间差与状态', screen: 'world' },
   { key: 'diary', label: '日记', icon: '📔', desc: '想写几条都可以', screen: 'diary' },
   { key: 'anniversary', label: '纪念日', icon: '💙', desc: '显示在主界面', screen: 'anniversary' },

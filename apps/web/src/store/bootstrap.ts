@@ -5,7 +5,7 @@
  *   2) 渲染完成后后台拉远端：新数据覆盖本地、旧数据排队补发
  */
 import { applyTheme } from '@/lib/theme'
-import { STATIC_ONLY } from '@/lib/deploy'
+import { API_ENABLED, PROXY_MODE, STATIC_ONLY } from '@/lib/deploy'
 import { attachProactiveScheduler, attachReplyEngine } from '@/lib/engine/runtime'
 import { finalizeStaleCalls } from '@/lib/engine/call'
 import { attachCompanionEngine } from '@/lib/engine/companion'
@@ -79,9 +79,13 @@ export async function bootstrap() {
   /* 上次关机时正在进行的通话 → 直接按「已挂断」落定，别卡在「正在通话」 */
   finalizeStaleCalls()
 
-  if (STATIC_ONLY) {
+  if (!API_ENABLED) {
     /* 纯静态站：没有后端，语音 / 搜索 / 跨设备同步都不假装能用 */
-    useIntegrationsStore.setState({ loaded: true, reachable: false, note: '静态托管模式：没有后端，语音 / 搜索 / 同步不可用' })
+    useIntegrationsStore.setState({
+      loaded: true,
+      reachable: false,
+      note: '静态托管模式：没有后端，语音 / 搜索 / 同步不可用',
+    })
   } else {
     /* 接入状态（MiniMax 语音能不能真的出声）：读到了才会把 INTEGRATIONS.tts 打开，
        读不到就一律「未接通」——引擎宁可只写轨迹，也不发假语音。
@@ -93,7 +97,8 @@ export async function bootstrap() {
     attachSearchEngine()
 
     /* ── ② 远端（后台，不阻塞渲染） ── */
-    void syncFromRemote()
+    /* 静态 + 代理只借代理做语音 / 搜索，聊天数据仍只在本机，不拉也不推。 */
+    if (!PROXY_MODE) void syncFromRemote()
   }
 }
 

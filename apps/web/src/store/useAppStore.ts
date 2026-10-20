@@ -92,6 +92,7 @@ export type ScreenId =
   | 'anniversary'
   | 'emotion'
   | 'survey'
+  | 'outfit'
 
 export const VALID_SCREENS: ScreenId[] = [
   'home',
@@ -119,6 +120,7 @@ export const VALID_SCREENS: ScreenId[] = [
   'anniversary',
   'emotion',
   'survey',
+  'outfit',
 ]
 
 /** 开发便利：用 URL hash 直接打开某个屏幕，例如 http://localhost:5173/#rule-engine */

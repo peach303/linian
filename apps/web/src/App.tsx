@@ -27,8 +27,13 @@ import { DataScreen } from '@/screens/settings/DataScreen'
 import { AnniversaryScreen } from '@/screens/hub/AnniversaryScreen'
 import { EmotionScreen } from '@/screens/hub/EmotionScreen'
 import { SurveyScreen } from '@/screens/hub/SurveyScreen'
+import { OutfitScreen } from '@/screens/hub/OutfitScreen'
 import { CallOverlay } from '@/components/chat/CallOverlay'
 import { MusicMiniPlayer } from '@/components/music/MusicMiniPlayer'
+import { MessagePopup } from '@/components/common/MessagePopup'
+import { ImageViewer } from '@/components/common/ImageViewer'
+import { startChatKeepAlive, stopChatKeepAlive, resumeChatKeepAlive } from '@/lib/keepAlive'
+import { useUIStore } from '@/store/useUIStore'
 
 /** 屏幕栈：push 时从右滑入，back 时反向 */
 const SCREENS = {
@@ -58,6 +63,7 @@ const SCREENS = {
   anniversary: AnniversaryScreen,
   emotion: EmotionScreen,
   survey: SurveyScreen,
+  outfit: OutfitScreen,
 } as const
 
 export default function App() {
@@ -68,6 +74,25 @@ export default function App() {
 
   /* 手机的系统返回键 / 返回手势：退一屏，而不是直接退出应用（详见文件末尾 useSystemBack） */
   useSystemBack()
+
+  /* 聊天后台保活：开关在设置里；这里只负责按开关启停。
+     自动播放可能被浏览器拒绝，所以第一次触摸 / 点击时再补一次。 */
+  const backgroundKeepAlive = useUIStore((s) => s.backgroundKeepAlive)
+  useEffect(() => {
+    if (backgroundKeepAlive) void startChatKeepAlive()
+    else stopChatKeepAlive()
+  }, [backgroundKeepAlive])
+  useEffect(() => {
+    const wake = () => {
+      if (useUIStore.getState().backgroundKeepAlive) void resumeChatKeepAlive()
+    }
+    window.addEventListener('pointerdown', wake, { once: true })
+    window.addEventListener('keydown', wake, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', wake)
+      window.removeEventListener('keydown', wake)
+    }
+  }, [])
 
   /* 系统状态栏 / 浏览器顶栏的颜色跟着主题走（装到桌面后是独立窗口，这一条最显眼）。
      主题是直接写 documentElement 的行内 CSS 变量的（lib/theme.ts），所以这里盯着属性变化。 */
@@ -85,8 +110,9 @@ export default function App() {
   }, [])
 
   return (
-    <PhoneShell>
-      <div className="relative flex min-h-0 flex-1 flex-col">
+    <>
+      <PhoneShell>
+        <div className="relative flex min-h-0 flex-1 flex-col">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.div
             key={screen}
@@ -101,10 +127,13 @@ export default function App() {
         </AnimatePresence>
 
         {/* 全局浮层：音乐小窗 / 通话（全屏 + 小窗）—— 切页面不会中断 */}
-        <MusicMiniPlayer />
-        <CallOverlay />
-      </div>
-    </PhoneShell>
+          <MusicMiniPlayer />
+          <CallOverlay />
+          <MessagePopup />
+        </div>
+      </PhoneShell>
+      <ImageViewer />
+    </>
   )
 }
 

@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
 import { Avatar } from '@/components/common/Avatar'
+import { bgCss } from '@/lib/appearance'
+import { pickImage, shrinkImageDataUrl } from '@/lib/file'
 import { nid } from '@/lib/ids'
 import { fromNow } from '@/lib/time'
 import { favoriteFromMoment } from '@/lib/favorites'
 import { useAppStore } from '@/store/useAppStore'
+import { useAppearanceStore } from '@/store/useAppearanceStore'
+import { useViewerStore } from '@/store/useViewerStore'
 import type { Moment } from '@/types'
 
 /**
@@ -16,29 +20,62 @@ export function MomentsScreen() {
   const favorites = useAppStore((s) => s.favorites)
   const addFavorite = useAppStore((s) => s.addFavorite)
   const removeFavorite = useAppStore((s) => s.removeFavorite)
+  const momentsBackground = useAppearanceStore((s) => s.appearance.momentsBackground)
+  const setBackground = useAppearanceStore((s) => s.setBackground)
+  const openImage = useViewerStore((s) => s.openImage)
   const [openComment, setOpenComment] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [writing, setWriting] = useState(false)
   const [text, setText] = useState('')
+  const [postImages, setPostImages] = useState<string[]>([])
+  const [postErr, setPostErr] = useState('')
+  const [bgErr, setBgErr] = useState('')
 
   const nameOf = (id: string) => (id === me.id ? me.nickname : dream.nickname)
   const list = [...moments].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
 
   const post = () => {
     const t = text.trim()
-    if (!t) return
+    if (!t && postImages.length === 0) return
     const m: Moment = {
       id: nid('p'),
       authorId: me.id,
       text: t,
-      images: [],
+      images: postImages,
       likes: [],
       comments: [],
       createdAt: new Date().toISOString(),
     }
     pushMoment(m)
     setText('')
+    setPostImages([])
+    setPostErr('')
     setWriting(false)
+  }
+
+  const addPostImages = () => {
+    if (postImages.length >= 9) {
+      setPostErr('最多 9 张图片。')
+      return
+    }
+    setPostErr('')
+    pickImage(
+      async (url) => {
+        try {
+          const small = await shrinkImageDataUrl(url)
+          setPostImages((prev) => (prev.length >= 9 ? prev : [...prev, small]))
+        } catch {
+          setPostErr('这张图片没处理成功，换一张试试。')
+        }
+      },
+      undefined,
+      { staticOnly: true, maxBytes: 12 * 1024 * 1024, onError: setPostErr },
+    )
+  }
+
+  const closeComposer = () => {
+    setWriting(false)
+    setPostErr('')
   }
 
   return (
@@ -48,7 +85,10 @@ export function MomentsScreen() {
         right={
           <button
             className="tap grid h-8 w-8 place-items-center rounded text-[22px] text-ink-sub"
-            onClick={() => setWriting(true)}
+            onClick={() => {
+              setPostErr('')
+              setWriting(true)
+            }}
             aria-label="发动态"
           >
             ＋
@@ -58,9 +98,57 @@ export function MomentsScreen() {
 
       <div className="no-scrollbar flex-1 overflow-y-auto">
         {/* 背景图 + 我的头像 */}
-        <div className="relative h-36 bg-gradient-to-br from-[#bcdcff] to-[#e9f4ff]">
+        <div
+          className="relative h-36"
+          style={{
+            background:
+              (momentsBackground ? bgCss(momentsBackground) : '') ||
+              'linear-gradient(135deg, #bcdcff 0%, #e9f4ff 100%)',
+            backgroundPosition: 'center',
+            backgroundSize: 'cover',
+            backgroundRepeat: 'no-repeat',
+          }}
+        >
+          <div className="absolute right-2 top-2 flex items-center gap-1.5">
+            {momentsBackground?.mode === 'image' && momentsBackground.value && (
+              <button
+                className="tap rounded-full bg-black/30 px-2.5 py-1 text-[11px] text-white backdrop-blur"
+                onClick={() =>
+                  setBackground('momentsBackground', {
+                    mode: 'preset',
+                    value: 'linian-blue',
+                    blur: 0,
+                    dim: 0,
+                  })
+                }
+              >
+                恢复默认
+              </button>
+            )}
+            <button
+              className="tap rounded-full bg-black/30 px-2.5 py-1 text-[11px] text-white backdrop-blur"
+              onClick={() =>
+                pickImage(
+                  (url) => {
+                    setBgErr('')
+                    setBackground('momentsBackground', {
+                      mode: 'image',
+                      value: url,
+                      blur: 0,
+                      dim: 0,
+                    })
+                  },
+                  undefined,
+                  { onError: setBgErr },
+                )
+              }
+            >
+              换背景
+            </button>
+          </div>
           <Avatar src={me.avatarUrl} name={me.nickname} size={64} ring className="absolute -bottom-8 right-4" />
         </div>
+        {bgErr && <p className="px-3 pt-2 text-[11px] text-[#e0533d]">{bgErr}</p>}
 
         <div className="mt-3 space-y-3 px-3 pb-6 pt-9">
           {list.length === 0 && (
@@ -91,13 +179,38 @@ export function MomentsScreen() {
                       )}
                     </div>
 
-                    <p className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-ink">{p.text}</p>
+                    {!!p.text && (
+                      <p className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-ink">{p.text}</p>
+                    )}
 
                     {!!p.images.length && (
-                      <div className="mt-2 grid grid-cols-3 gap-1.5">
-                        {p.images.map((c, i) => (
-                          <div key={i} className="aspect-square rounded-md" style={{ background: c }} />
-                        ))}
+                      <div
+                        className={
+                          p.images.length === 1
+                            ? 'mt-2 grid max-w-[72%] grid-cols-1 gap-1.5'
+                            : 'mt-2 grid grid-cols-3 gap-1.5'
+                        }
+                      >
+                        {p.images.map((c, i) =>
+                          isRealImage(c) ? (
+                            <button
+                              key={i}
+                              type="button"
+                              className="tap overflow-hidden rounded-md"
+                              onClick={() => openImage(c, '朋友圈图片')}
+                              aria-label={`查看朋友圈图片 ${i + 1}`}
+                            >
+                              <img
+                                src={c}
+                                alt={`朋友圈图片 ${i + 1}`}
+                                className="aspect-square w-full object-cover"
+                                draggable={false}
+                              />
+                            </button>
+                          ) : (
+                            <div key={i} className="aspect-square rounded-md" style={{ background: c }} />
+                          ),
+                        )}
                       </div>
                     )}
 
@@ -205,27 +318,57 @@ export function MomentsScreen() {
       {/* 发动态 */}
       {writing && (
         <div className="absolute inset-0 z-40 flex flex-col justify-end">
-          <button className="flex-1 bg-black/25" onClick={() => setWriting(false)} aria-label="关闭" />
-          <div className="rounded-t-2xl bg-page px-4 pb-5 pt-3 shadow-phone">
+          <button className="flex-1 bg-black/25" onClick={closeComposer} aria-label="关闭" />
+          <div className="max-h-[88%] overflow-y-auto rounded-t-2xl bg-page px-4 pb-5 pt-3 shadow-phone">
             <div className="mb-2 flex items-center">
               <span className="text-[13px] text-ink-sub">发一条动态</span>
-              <button className="tap ml-auto text-[13px] text-ink-faint" onClick={() => setWriting(false)}>
+              <button className="tap ml-auto text-[13px] text-ink-faint" onClick={closeComposer}>
                 ✕
               </button>
             </div>
             <textarea
-              autoFocus
               rows={4}
               value={text}
               maxLength={300}
-              placeholder="这一刻的想法…"
+              placeholder="这一刻的想法…（也可以只发图片）"
               onChange={(e) => setText(e.target.value)}
               className="w-full resize-none rounded-lg bg-surface px-3 py-2.5 text-[15px] leading-relaxed text-ink outline-none ring-1 ring-hairline focus:ring-brand placeholder:text-ink-faint"
             />
+
+            {postImages.length > 0 && (
+              <div className="mt-2 grid grid-cols-4 gap-1.5">
+                {postImages.map((src, i) => (
+                  <div key={i} className="relative aspect-square overflow-hidden rounded-md">
+                    <img src={src} alt={`待发图片 ${i + 1}`} className="h-full w-full object-cover" draggable={false} />
+                    <button
+                      type="button"
+                      className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-black/55 text-[11px] leading-none text-white"
+                      onClick={() => setPostImages((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label={`移除第 ${i + 1} 张图片`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                className="tap rounded-lg bg-surface px-3 py-1.5 text-[12px] text-ink-sub ring-1 ring-hairline"
+                onClick={addPostImages}
+              >
+                🖼 添加图片
+              </button>
+              <span className="text-[11px] text-ink-faint">{postImages.length}/9 · 只存本机</span>
+            </div>
+            {postErr && <p className="mt-1 text-[11px] text-[#e0533d]">{postErr}</p>}
+
             <div className="mt-3 flex gap-2">
               <button
                 className="tap flex-1 rounded-lg bg-surface py-2.5 text-[14px] text-ink-sub ring-1 ring-hairline"
-                onClick={() => setWriting(false)}
+                onClick={closeComposer}
               >
                 取消
               </button>
@@ -238,4 +381,9 @@ export function MomentsScreen() {
       )}
     </div>
   )
+}
+
+/** 真实图片（本地上传的 dataURL / 外链），而不是他动态里的占位色块 */
+function isRealImage(src: string) {
+  return /^(data:image\/|https?:\/\/|blob:)/i.test(src)
 }

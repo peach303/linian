@@ -14,8 +14,10 @@ import { Avatar } from '@/components/common/Avatar'
 import { VoiceBubble } from '@/components/chat/VoiceBubble'
 import { HisQuestionCard } from '@/components/chat/HisQuestionCard'
 import { callSummary } from '@/lib/engine/call'
+import { ABOUT_LABEL, MEANING_SOURCE_LABEL } from '@/lib/engine/meaning'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
+import { useViewerStore } from '@/store/useViewerStore'
 import { MESSAGE_BUBBLE, BUBBLE_BASE } from './messageStyles'
 
 /**
@@ -86,6 +88,24 @@ export function MessageBubble({
           </div>
         )}
 
+        {/* 他这条话的本意 / 在说谁：在气泡上方，不抢正文 */}
+        {!recalled && (message.meaning || message.about) && (
+          <div
+            className={clsx(
+              'mb-1 max-w-full rounded-md bg-brand-soft/55 px-2 py-1 text-[11px] leading-snug text-brand-deep ring-1 ring-brand/10',
+              mine ? 'text-right' : 'text-left',
+            )}
+          >
+            {message.meaning && <div>💭 本意：{message.meaning}</div>}
+            {message.about && (
+              <div className="mt-0.5 opacity-90">
+                🎯 在说：{ABOUT_LABEL[message.about]}
+                {message.meaningSource ? ` · ${MEANING_SOURCE_LABEL[message.meaningSource]}` : ''}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-end gap-1.5">
           {/* 主动消息 · 左上角小爱心 */}
           {message.proactive && (
@@ -139,6 +159,8 @@ export function MessageBubble({
 
 function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'peerAvatar' | 'myAvatar'>) {
   const openRedPacket = useChatStore((s) => s.openRedPacket)
+  const openImage = useViewerStore((s) => s.openImage)
+  const openDoodle = useViewerStore((s) => s.openDoodle)
   const base = [
     'ln-bubble animate-bubble-in px-3 py-2 text-[15px] leading-[1.45] break-words',
     mine ? 'ln-bubble-me' : 'ln-bubble-peer',
@@ -163,13 +185,31 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
 
       if (ct === 'IMAGE' || ct === 'STICKER') {
         if (url) {
-          return (
+          const img = (
             <img
               src={url}
-              alt=""
+              alt={ct === 'STICKER' ? '表情包' : '图片'}
               onContextMenu={common.onContextMenu}
-              className="animate-bubble-in max-h-52 rounded-xl object-cover shadow-card"
+              className={clsx(
+                'animate-bubble-in max-h-52 max-w-full rounded-xl shadow-card',
+                ct === 'STICKER' ? 'object-contain' : 'object-cover',
+              )}
             />
+          )
+          // 图片点开看大图；表情包保持小尺寸，不接这个入口
+          return ct === 'IMAGE' ? (
+            <button
+              className="tap block max-w-full"
+              onClick={(e) => {
+                e.stopPropagation()
+                openImage(url, '图片')
+              }}
+              title="点开看大图"
+            >
+              {img}
+            </button>
+          ) : (
+            img
           )
         }
         // 没配图的表情包：图标 + 名字，仍给气泡底
@@ -205,12 +245,21 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
 
     case 'IMAGE':
       return (
-        <img
-          src={(message.payload?.url as string) ?? ''}
-          alt="图片"
-          onContextMenu={common.onContextMenu}
-          className="animate-bubble-in max-h-56 rounded-lg object-cover shadow-card"
-        />
+        <button
+          className="tap block max-w-full"
+          onClick={(e) => {
+            e.stopPropagation()
+            openImage((message.payload?.url as string) ?? '', '图片')
+          }}
+          title="点开看大图"
+        >
+          <img
+            src={(message.payload?.url as string) ?? ''}
+            alt="图片"
+            onContextMenu={common.onContextMenu}
+            className="animate-bubble-in max-h-56 max-w-full rounded-lg object-cover shadow-card"
+          />
+        </button>
       )
 
     case 'RED_PACKET': {
@@ -338,25 +387,34 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       return (
         <div {...common} className="animate-bubble-in w-[216px] p-0">
           <div className="p-2">
-            <svg
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              className="w-full rounded-md bg-[#FBFDFF] ring-1 ring-hairline"
-              style={{ aspectRatio: String(p?.ratio ?? 4 / 3) }}
+            <button
+              className="tap block w-full"
+              onClick={(e) => {
+                e.stopPropagation()
+                openDoodle(p ?? {})
+              }}
+              title="点开看大图"
             >
-              {strokes.map((s, i) => (
-                <polyline
-                  key={i}
-                  points={s.points.map(([x, y]) => `${(x * 100).toFixed(2)},${(y * 100).toFixed(2)}`).join(' ')}
-                  fill="none"
-                  stroke={s.color}
-                  strokeWidth={s.width}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ))}
-            </svg>
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="w-full rounded-md bg-[#FBFDFF] ring-1 ring-hairline"
+                style={{ aspectRatio: String(p?.ratio ?? 4 / 3) }}
+              >
+                {strokes.map((s, i) => (
+                  <polyline
+                    key={i}
+                    points={s.points.map(([x, y]) => `${(x * 100).toFixed(2)},${(y * 100).toFixed(2)}`).join(' ')}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth={s.width}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </svg>
+            </button>
           </div>
           <div className="border-t border-hairline px-3 py-1.5 text-[10px]">
             {p?.from === 'him' ? (

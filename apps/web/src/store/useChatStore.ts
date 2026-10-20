@@ -3,6 +3,7 @@ import type { Conversation, DoodlePayload, ExtendAction, GiftItem, Message, Ques
 import { MOCK_CONVERSATION, MOCK_MESSAGES } from '@/mock/chat'
 import { myPatLine } from '@/lib/pats'
 import { appendMessage, markSent, recallMessage as repoRecall } from '@/lib/repo'
+import { notifyPeerMessage } from '@/lib/notify'
 import { useAppStore } from '@/store/useAppStore'
 import { useRulesStore } from '@/store/useRulesStore'
 
@@ -126,6 +127,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   pushMessage: (m) => {
     set((st) => ({ messages: [...st.messages, m] }))
     void appendMessage(m)
+    const conv = get().conversation
+    if (conv && m.senderId !== conv.me.id) {
+      void notifyPeerMessage(m, {
+        nickname: useAppStore.getState().dream.nickname,
+        screen: useAppStore.getState().screen,
+      })
+    }
   },
 
   sendPat: (suffix) => {
@@ -225,6 +233,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     set((st) => ({ messages: [...st.messages, msg], extendOpen: false, extendPanel: 'main' }))
     void appendMessage(msg)
+    void notifyPeerMessage(msg, {
+      nickname: dream.nickname,
+      screen: useAppStore.getState().screen,
+    })
   },
 
   /** 我答完他发来的问卷 */

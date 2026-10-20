@@ -8,6 +8,7 @@
  * 没配 Key 时这里一律返回 null，调用方**退化成一条文字**（绝不假装是语音）。
  */
 import { hash32 } from '@/lib/engine/seed'
+import { API_BASE } from '@/lib/deploy'
 import { db } from '@/lib/db'
 
 /** MiniMax 常见的系统音色（也可以在「接入」页填自定义 voiceId，比如克隆音色） */
@@ -142,7 +143,7 @@ export async function synthesizeDetailed(
 
   let res: Response
   try {
-    res = await fetch('/api/v1/voice/tts', {
+    res = await fetch(`${API_BASE}/voice/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: t, voiceId: o.voiceId, model: o.model, speed: o.speed, emotion: o.emotion }),
@@ -257,7 +258,7 @@ function withIntegrationDefaults(j: Partial<IntegrationsStatus> | null | undefin
 
 export async function readIntegrations(): Promise<IntegrationsStatus | null> {
   try {
-    const res = await fetch('/api/v1/integrations')
+    const res = await fetch(`${API_BASE}/integrations`)
     if (!res.ok) return null
     const j = (await res.json()) as Partial<IntegrationsStatus>
     return withIntegrationDefaults(j)
@@ -267,6 +268,8 @@ export async function readIntegrations(): Promise<IntegrationsStatus | null> {
 }
 
 export interface IntegrationsPatch {
+  /** 免费代理模式：保存 / 断开 Key 时需要管理密码；完整本地后端会忽略 */
+  adminPassword?: string
   minimax?: {
     apiKey?: string
     groupId?: string
@@ -288,7 +291,7 @@ export interface IntegrationsPatch {
 
 export async function saveIntegrations(patch: IntegrationsPatch): Promise<IntegrationsStatus | null> {
   try {
-    const res = await fetch('/api/v1/integrations', {
+    const res = await fetch(`${API_BASE}/integrations`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),

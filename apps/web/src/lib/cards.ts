@@ -25,7 +25,7 @@ export const TYPE_META: TypeMeta[] = [
   { key: 'TEXT', label: '文字', icon: '🅰️', color: '#5B9BE8', weightKey: 'text', hint: '主字卡，一句一行' },
   { key: 'KAOMOJI', label: '颜文字', icon: '◕‿◕', color: '#8FC2F5', weightKey: 'kaomoji', hint: '(๑•̀ㅂ•́)و✧' },
   { key: 'EMOJI', label: 'Emoji', icon: '🌙', color: '#9B8FE8', weightKey: 'text', hint: '单个或多个 emoji' },
-  { key: 'STICKER', label: '表情包', icon: '🧸', color: '#68C8BE', weightKey: 'sticker', hint: '有名字的表情包' },
+  { key: 'STICKER', label: '表情包', icon: '🧸', color: '#68C8BE', weightKey: 'sticker', hint: '可上传 GIF / 动图，也可以只写名字' },
   { key: 'IMAGE', label: '图片', icon: '🖼️', color: '#F498B4', weightKey: 'image', hint: '上传的图片卡' },
 ]
 

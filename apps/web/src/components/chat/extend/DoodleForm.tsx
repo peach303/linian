@@ -70,7 +70,7 @@ export function DoodleForm() {
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={up}
-        className="relative w-full touch-none overflow-hidden rounded-lg bg-[#FBFDFF] ring-1 ring-hairline"
+        className="relative mx-auto w-full max-w-[250px] touch-none overflow-hidden rounded-lg bg-[#FBFDFF] ring-1 ring-hairline"
         style={{ aspectRatio: String(RATIO) }}
       >
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
@@ -92,6 +92,14 @@ export function DoodleForm() {
             用手指 / 鼠标在这里画
           </div>
         )}
+      </div>
+
+      {/* 发送键放在画布正下方，不藏在颜色条下面（扩展面板高度有限，之前很容易被挡住） */}
+      <div className="flex items-center gap-2">
+        <ExtendHint>画完点右边发送</ExtendHint>
+        <ExtendButton className="ml-auto" disabled={!strokes.length} onClick={send}>
+          发送涂鸦
+        </ExtendButton>
       </div>
 
       <div className="flex items-center gap-2">
@@ -129,16 +137,11 @@ export function DoodleForm() {
         </button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <ExtendHint>
-          他回话 {Math.round(d.reply.p * 100)}% · 回画一张 {Math.round(d.drawBack.p * 100)}%
-        </ExtendHint>
-        <ExtendButton className="ml-auto" disabled={!strokes.length} onClick={send}>
-          发这张涂鸦
-        </ExtendButton>
-      </div>
-
-      <ExtendHint>存的是笔画（几百字节的 JSON），不是图片 —— 同步得动，放大也不糊。</ExtendHint>
+      <ExtendHint>
+        他回话 {Math.round(d.reply.p * 100)}% · 回画一张 {Math.round(d.drawBack.p * 100)}%
+        <br />
+        存的是笔画（几百字节的 JSON），不是图片 —— 同步得动，放大也不糊。
+      </ExtendHint>
     </div>
   )
 }

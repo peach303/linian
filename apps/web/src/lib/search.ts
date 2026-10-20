@@ -8,6 +8,8 @@
  * 于是这里**只如实转发结果**，搜不到就把原因原样带回来（`ok:false`），
  * 由调用方决定「什么都不推、只记一条轨迹」。**绝不编一条搜索结果。**
  */
+import { API_BASE } from '@/lib/deploy'
+
 export interface SearchResult {
   /** 标题 */
   name: string
@@ -95,7 +97,7 @@ export async function searchWeb(
   // 开了 enrich 的话后端要真取几张图 / 抓一次网页，给它宽一点
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? (opts.enrich ? 35_000 : 20_000))
   try {
-    const res = await fetch('/api/v1/search', {
+    const res = await fetch(`${API_BASE}/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: q, count: opts.count, freshness: opts.freshness, enrich: Boolean(opts.enrich) }),

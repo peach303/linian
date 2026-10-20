@@ -1,3 +1,4 @@
+import { API_BASE } from '@/lib/deploy'
 import type { MusicPayload, Track } from '@/types'
 
 /**
@@ -77,7 +78,7 @@ export interface ResolvedSong {
  */
 export async function resolveNetease(input: string): Promise<ResolvedSong | null> {
   try {
-    const res = await fetch(`/api/v1/music/resolve?input=${encodeURIComponent(input)}`)
+    const res = await fetch(`${API_BASE}/music/resolve?input=${encodeURIComponent(input)}`)
     if (!res.ok) return null
     const j = (await res.json()) as Partial<ResolvedSong> | null
     if (!j?.songId) return null

@@ -5,7 +5,7 @@ import { DEFAULT_APPEARANCE } from '@/types/appearance'
 import type { Appearance,BackgroundValue, BubbleStyle, IconValue } from '@/types/appearance'
 import type { ScreenId } from '@/store/useAppStore'
 
-type Section = 'appIcon' | 'frame' | 'homeBackground' | 'chatBackground' | 'bubble'
+type Section = 'appIcon' | 'frame' | 'homeBackground' | 'chatBackground' | 'momentsBackground' | 'bubble'
 
 interface AppearanceState {
   appearance: Appearance
@@ -13,7 +13,10 @@ interface AppearanceState {
   hydrate: (a: Appearance) => void
 
   setIcon: (section: 'appIcon' | 'frame', v: IconValue) => void
-  setBackground: (section: 'homeBackground' | 'chatBackground', patch: Partial<BackgroundValue>) => void
+  setBackground: (
+    section: 'homeBackground' | 'chatBackground' | 'momentsBackground',
+    patch: Partial<BackgroundValue>,
+  ) => void
   setBubble: (patch: Partial<BubbleStyle>) => void
   setEntryIcon: (screen: ScreenId, v: IconValue) => void
   resetEntryIcon: (screen: ScreenId) => void

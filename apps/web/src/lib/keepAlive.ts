@@ -19,6 +19,8 @@
 let wakeLock: WakeLockSentinel | null = null
 let silent: HTMLAudioElement | null = null
 let silentUrl = ''
+/** 聊天页的保活音频：和通话 / 音乐分开，互不影响 */
+let chatSilent: HTMLAudioElement | null = null
 
 /* ───────────────────────── Wake Lock ───────────────────────── */
 
@@ -91,6 +93,49 @@ function stopSilent() {
   silent.pause()
   silent.removeAttribute('src')
   silent = null
+}
+
+/**
+ * 聊天页的「尽力保活」：循环播放一段几乎听不见的音频。
+ *
+ * 这不是系统级后台服务。安卓 Chrome 通常会把有音频会话的标签页保留得久一点；
+ * iOS 锁屏 / 省电模式仍可能冻结页面。被冻结后就不会再产生新消息，也不会弹通知。
+ */
+export async function startChatKeepAlive() {
+  if (chatSilent) return
+  try {
+    const a = new Audio(silentWav())
+    a.loop = true
+    a.volume = 0.001
+    a.setAttribute('playsinline', '')
+    chatSilent = a
+    await a.play()
+  } catch {
+    try {
+      chatSilent?.pause()
+      chatSilent?.removeAttribute('src')
+    } catch {
+      /* ignore */
+    }
+    chatSilent = null
+  }
+}
+
+export function stopChatKeepAlive() {
+  if (!chatSilent) return
+  chatSilent.pause()
+  chatSilent.removeAttribute('src')
+  chatSilent = null
+}
+
+/** 从后台回到前台时，浏览器可能把音频暂停了；还在保活就再拉起来 */
+export async function resumeChatKeepAlive() {
+  if (!chatSilent) return
+  try {
+    if (chatSilent.paused) await chatSilent.play()
+  } catch {
+    /* 没有用户手势时会被拒绝，等下一次点击再试 */
+  }
 }
 
 /* ───────────────────────── Media Session ───────────────────────── */
@@ -188,6 +233,9 @@ export function stopKeepAlive() {
 /* 回到前台时重新申请 Wake Lock（切后台会被系统自动释放） */
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && silent) void acquireWakeLock()
+    if (document.visibilityState === 'visible') {
+      if (silent) void acquireWakeLock()
+      void resumeChatKeepAlive()
+    }
   })
 }

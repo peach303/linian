@@ -249,6 +249,14 @@ export function VoiceFavoritesScreen() {
                       className="mt-2 max-h-40 rounded-lg object-cover"
                     />
                   )}
+                  {f.kind === 'MUSIC' && (
+                    <button
+                      className="tap mt-2 rounded-lg bg-brand-soft/60 px-2.5 py-1 text-[11px] text-brand-deep"
+                      onClick={() => push('music-room')}
+                    >
+                      🎵 去「一起听」里放这首
+                    </button>
+                  )}
                   {f.reason && (
                     <div className="mt-2 rounded-lg bg-brand/8 px-2.5 py-1.5 text-[11px] leading-snug text-brand-deep">
                       收藏原因：{f.reason}

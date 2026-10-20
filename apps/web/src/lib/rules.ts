@@ -22,6 +22,7 @@ export const DEFAULT_RULES: RuleConfig = {
     pinyinSentence: t(0.05, false),
     conjunction: t(0.25),
     punctuation: t(0.85),
+    meaning: t(0.22),
     multiCard: { ...t(0.3), count: [2, 4] },
     freeSentence: t(0.2),
     pickup: t(0.1),
@@ -69,6 +70,8 @@ export const DEFAULT_RULES: RuleConfig = {
     claim: { enabled: true, p: 0.96, delay: [5, 600] },
     thanks: t(0.55),
     back: { enabled: true, p: 0.28, amount: [1.11, 20], delay: [60, 1800] },
+    /** 主动发红包：金额可以很大，几位数都行 */
+    sendMe: { ...t(0.04), cooldownMin: 720, amount: [52, 99999] },
   },
   gift: {
     accept: { enabled: true, p: 0.97, delay: [10, 900] },
@@ -91,6 +94,8 @@ export const DEFAULT_RULES: RuleConfig = {
     say: t(0.7),
     listenMin: [8, 45],
     shareBack: t(0.35),
+    /** 他主动邀请我一起听 */
+    inviteMe: { ...t(0.04), cooldownMin: 720 },
   },
   doodle: {
     reply: { enabled: true, p: 0.85, delay: [10, 900] },
@@ -223,6 +228,7 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'chat.pinyinSentence', label: '拼音造句', desc: '用拼音拼句子（wei shen me ne）', kind: 'prob' },
       { path: 'chat.conjunction', label: '连词', desc: '而且 / 但是 / 所以…让句子更像人话', kind: 'prob' },
       { path: 'chat.punctuation', label: '标点符号', desc: '关闭后整句不带标点', kind: 'prob' },
+      { path: 'chat.meaning', label: '自带本意', desc: '他发消息时附带「本意 / 在说谁」的概率；长按也可以随时问', kind: 'prob' },
       { path: 'chat.multiCard', label: '多字卡拼接', desc: '抽签第 4 步：一次拼多张卡', kind: 'prob' },
       { path: 'chat.multiCard.count', label: '拼接张数', desc: '最多 / 最少几张', kind: 'intRange', min: 1, max: 8, step: 1, unit: 'count', child: true, requires: 'chat.multiCard' },
       { path: 'chat.freeSentence', label: '自由组句', desc: '交给 LLM 造句，而不是照搬字卡', kind: 'prob' },
@@ -290,6 +296,9 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'redPacket.back.p', label: '回红包概率', kind: 'p', child: true, requires: 'redPacket.back' },
       { path: 'redPacket.back.amount', label: '回红包金额', desc: '最少 / 最多', kind: 'range', min: 0.01, max: 2000, step: 1, unit: 'money', child: true, requires: 'redPacket.back' },
       { path: 'redPacket.back.delay', label: '回红包延迟', desc: '最快 / 最慢', kind: 'range', min: 5, max: 86400, step: 5, unit: 'sec', child: true, requires: 'redPacket.back' },
+      { path: 'redPacket.sendMe', label: '红包 · 他主动发', desc: '不等你先发；按冷却时间掷签，金额可以很大', kind: 'prob' },
+      { path: 'redPacket.sendMe.cooldownMin', label: '主动红包冷却', desc: '两次主动红包之间至少隔多久', kind: 'int', min: 0, max: 10080, step: 30, unit: 'min', child: true, requires: 'redPacket.sendMe' },
+      { path: 'redPacket.sendMe.amount', label: '主动红包金额', desc: '最少 / 最多（会偶尔抽 520 / 1314 / 99999 这种数）', kind: 'range', min: 0.01, max: 999999, step: 1, unit: 'money', child: true, requires: 'redPacket.sendMe' },
       { path: 'gift.accept.enabled', label: '礼物 · 会收下', desc: '不收下的话礼物卡会一直是「等他拆」', kind: 'bool' },
       { path: 'gift.accept.p', label: '礼物 · 收下概率', kind: 'p', requires: 'gift.accept.enabled' },
       { path: 'gift.accept.delay', label: '礼物 · 收下延迟', desc: '最快 / 最慢', kind: 'range', min: 5, max: 7200, step: 5, unit: 'sec', child: true, requires: 'gift.accept.enabled' },
@@ -302,6 +311,8 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'music.say', label: '音乐 · 说一句', desc: '听完对这首歌的看法', kind: 'prob', child: true, requires: 'music.join.enabled' },
       { path: 'music.listenMin', label: '音乐 · 一起听多久', desc: '最少 / 最多', kind: 'range', min: 1, max: 600, step: 1, unit: 'min', child: true, requires: 'music.join.enabled' },
       { path: 'music.shareBack', label: '音乐 · 他回推一首歌', kind: 'prob', child: true, requires: 'music.join.enabled' },
+      { path: 'music.inviteMe', label: '音乐 · 他主动邀请你', desc: '不等你先邀请；会从你的歌单里挑一首，或推他自己的歌', kind: 'prob' },
+      { path: 'music.inviteMe.cooldownMin', label: '主动邀请冷却', desc: '两次主动邀请之间至少隔多久', kind: 'int', min: 0, max: 10080, step: 30, unit: 'min', child: true, requires: 'music.inviteMe' },
       { path: 'doodle.reply.enabled', label: '涂鸦 · 他会回话', desc: '不回的画会一直躺着', kind: 'bool' },
       { path: 'doodle.reply.p', label: '涂鸦 · 回话概率', kind: 'p', requires: 'doodle.reply.enabled' },
       { path: 'doodle.reply.delay', label: '涂鸦 · 回话延迟', desc: '最快 / 最慢', kind: 'range', min: 5, max: 7200, step: 5, unit: 'sec', child: true, requires: 'doodle.reply.enabled' },

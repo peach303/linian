@@ -8,7 +8,7 @@
  * 与 apps/server/src/modules/*（NestJS 生产实现）。
  */
 import { db } from './db'
-import { STATIC_ONLY } from './deploy'
+import { API_BASE as API, STATIC_ONLY } from './deploy'
 import { DEFAULT_RULES, withRuleDefaults } from './rules'
 import { defaultCards } from './cards'
 import { defaultPats } from './pats'
@@ -20,7 +20,6 @@ import type { Card } from '@/types/cards'
 import type { Anniversary, CheckPhone, Companion, CompanionMessage, CompanionSession, Diary, DiaryEntry, EmotionTag, FavoriteItem, GiftItem, Letter, Message, Moment, MusicRoom, PatEntry, QuestionPack, QuizSession, ReadRoom, SearchPush, UserProfile, VoiceClip, WatchItem, WatchRoom, World } from '@/types'
 import type { RuleConfig } from '@/types/rules'
 
-const API = '/api/v1'
 const KV_STATE = 'state'
 const KV_RULES = 'rules'
 const KV_RULES_VERSION = 'rulesVersion'

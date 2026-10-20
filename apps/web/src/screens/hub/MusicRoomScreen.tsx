@@ -5,6 +5,7 @@ import { NavBar } from '@/components/common/NavBar'
 import { AddTrackSheet } from '@/components/music/AddTrackSheet'
 import { onPlayer, pause, play, playTrack, playerState, seek, stop, type PlayerState } from '@/lib/audio'
 import { leaveRoomScreen } from '@/lib/engine/room'
+import { favoriteFromTrack } from '@/lib/favorites'
 import { mmss, neteaseEmbedUrl, neteaseSongUrl, playableKind } from '@/lib/music'
 import { nid } from '@/lib/ids'
 import { useAppStore } from '@/store/useAppStore'
@@ -25,12 +26,15 @@ export function MusicRoomScreen() {
   const removeRoomTrack = useAppStore((s) => s.removeRoomTrack)
   const pushRoomMessage = useAppStore((s) => s.pushRoomMessage)
   const patchRoom = useAppStore((s) => s.patchRoom)
+  const favorites = useAppStore((s) => s.favorites)
+  const addFavorite = useAppStore((s) => s.addFavorite)
+  const removeFavorite = useAppStore((s) => s.removeFavorite)
   const musicMini = useUIStore((s) => s.musicMini)
   const setMusicMini = useUIStore((s) => s.setMusicMini)
 
   const [player, setPlayer] = useState<PlayerState>(() => playerState())
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [loop, setLoop] = useState<'list' | 'one'>('list')
+  const [playMode, setPlayMode] = useState<'list' | 'shuffle' | 'one'>(room.playMode ?? 'list')
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -48,7 +52,17 @@ export function MusicRoomScreen() {
   /* 离开页面：把没落盘的秒数补上；**不停声** —— 声音交给全局的音乐悬浮窗继续放 */
   useEffect(() => () => leaveRoomScreen(), [])
 
-  /* 一曲放完 → 下一首（或单曲循环） */
+  /* 播放模式持久化：他改过之后，下次进房间还是同一个模式 */
+  useEffect(() => {
+    if (room.playMode !== playMode) patchRoom({ playMode })
+  }, [playMode, room.playMode, patchRoom])
+
+  /* 没有选中曲目时，默认选歌单第一首（他邀请我进房间时也不会空着） */
+  useEffect(() => {
+    if (!room.currentId && tracks[0]) patchRoom({ currentId: tracks[0].id, position: 0 })
+  }, [room.currentId, tracks, patchRoom])
+
+  /* 一曲放完 → 下一首（顺序 / 随机 / 单曲循环） */
   useEffect(() => {
     if (player.playing) {
       endedRef.current = false
@@ -57,12 +71,11 @@ export function MusicRoomScreen() {
     const finished = player.duration > 0 && player.position >= player.duration - 0.6
     if (!finished || endedRef.current) return
     endedRef.current = true
-    if (loop === 'one') {
+    if (playMode === 'one') {
       if (current) void playTrack(current, 0)
       return
     }
     const next = neighbour(1)
-    // 歌单里没有「下一首」了（或只有这一首）→ 停在结尾，不自己重放
     if (next && next.id !== current?.id) {
       patchRoom({ currentId: next.id, position: 0 })
       if (playableKind(next) === 'audio') void playTrack(next, 0)
@@ -70,7 +83,7 @@ export function MusicRoomScreen() {
       seek(0)
       patchRoom({ position: 0 })
     }
-  }, [player.playing, player.position, player.duration, loop])
+  }, [player.playing, player.position, player.duration, playMode, current, patchRoom, tracks])
 
   /* 房间对话滚到底 */
   useEffect(() => {
@@ -81,6 +94,10 @@ export function MusicRoomScreen() {
   /** 上一首 / 下一首：跳过只有歌名的（播不了的） */
   function neighbour(dir: 1 | -1): Track | undefined {
     if (!tracks.length) return undefined
+    if (playMode === 'shuffle') {
+      const pool = tracks.filter((t) => playableKind(t) !== 'none' && t.id !== room.currentId)
+      if (pool.length) return pool[Math.floor(Math.random() * pool.length)]
+    }
     const from = tracks.findIndex((t) => t.id === room.currentId)
     for (let i = 1; i <= tracks.length; i++) {
       const idx = (from + dir * i + tracks.length * 2) % tracks.length
@@ -90,10 +107,86 @@ export function MusicRoomScreen() {
     return undefined
   }
 
+  /* 他在房间里会自己接管一点播放：切歌 / 暂停 / 改播放模式（不是每次都动，随机的） */
+  const liveRef = useRef({
+    tracks,
+    currentId: room.currentId,
+    playMode,
+    playing: player.playing,
+    position: player.position,
+  })
+  useEffect(() => {
+    liveRef.current = {
+      tracks,
+      currentId: room.currentId,
+      playMode,
+      playing: player.playing,
+      position: player.position,
+    }
+  })
+  useEffect(() => {
+    if (!room.heJoinedAt) return
+    let timer = 0
+    const schedule = () => {
+      timer = window.setTimeout(run, 45_000 + Math.random() * 90_000)
+    }
+    const run = () => {
+      const live = liveRef.current
+      const app = useAppStore.getState()
+      const pool = live.tracks.filter((t) => playableKind(t) === 'audio')
+      const r = Math.random()
+
+      if (r < 0.3 && live.playing) {
+        pause()
+        patchRoom({ position: live.position })
+        app.pushRoomMessage({
+          id: nid('rm'),
+          senderId: dream.id,
+          text: '他按了暂停：先歇一会儿，听你说话。',
+          createdAt: new Date().toISOString(),
+        })
+      } else if (r < 0.72 && pool.length) {
+        const candidates = pool.filter((t) => t.id !== live.currentId)
+        const next = candidates[Math.floor(Math.random() * candidates.length)] ?? pool[0]
+        if (next) {
+          patchRoom({ currentId: next.id, position: 0 })
+          void playTrack(next, 0)
+          app.pushRoomMessage({
+            id: nid('rm'),
+            senderId: dream.id,
+            text: `他切到了《${next.title}》：这首更适合现在。`,
+            createdAt: new Date().toISOString(),
+          })
+        }
+      } else {
+        const nextMode = live.playMode === 'list' ? 'shuffle' : live.playMode === 'shuffle' ? 'one' : 'list'
+        setPlayMode(nextMode)
+        app.pushRoomMessage({
+          id: nid('rm'),
+          senderId: dream.id,
+          text: nextMode === 'shuffle' ? '他把播放调成了随机：下一首交给运气。' : nextMode === 'one' ? '他按了单曲循环：这首想再听一遍。' : '他调回了顺序播放。',
+          createdAt: new Date().toISOString(),
+        })
+      }
+      schedule()
+    }
+    schedule()
+    return () => window.clearTimeout(timer)
+  }, [room.heJoinedAt, dream.id, patchRoom])
+
   async function selectTrack(t: Track | undefined) {
     if (!t) return
     patchRoom({ currentId: t.id, position: 0 })
     if (playableKind(t) === 'audio') await playTrack(t, 0)
+  }
+
+  const favoriteOf = (trackId: string) =>
+    favorites.find((f) => f.owner === 'me' && f.kind === 'MUSIC' && f.refId === trackId)
+
+  const toggleTrackFavorite = (track: Track) => {
+    const fav = favoriteOf(track.id)
+    if (fav) removeFavorite(fav.id)
+    else addFavorite(favoriteFromTrack(track, 'me'))
   }
 
   async function togglePlay() {
@@ -179,8 +272,19 @@ export function MusicRoomScreen() {
                 {current?.cover ?? '🎵'}
               </div>
             )}
-            <div className="mt-3 max-w-full truncate text-[16px] font-medium text-ink">
-              {current?.title ?? '还没有歌'}
+            <div className="mt-3 flex max-w-full items-center gap-1.5">
+              <span className="min-w-0 truncate text-[16px] font-medium text-ink">
+                {current?.title ?? '还没有歌'}
+              </span>
+              {current && (
+                <button
+                  className="tap shrink-0 text-[15px] leading-none"
+                  title={favoriteOf(current.id) ? '取消收藏这首歌' : '收藏这首歌'}
+                  onClick={() => toggleTrackFavorite(current)}
+                >
+                  {favoriteOf(current.id) ? '★' : '☆'}
+                </button>
+              )}
             </div>
             <div className="max-w-full truncate text-[12px] text-ink-sub">
               {current?.artist ?? '点右上角「加歌」导入本机音乐 / 音频直链 / 网易云'}
@@ -257,11 +361,11 @@ export function MusicRoomScreen() {
                 ⏭
               </button>
               <button
-                className={clsx('tap text-[12px]', loop === 'one' ? 'text-brand-deep' : 'text-ink-faint')}
-                onClick={() => setLoop(loop === 'one' ? 'list' : 'one')}
-                title="单曲循环 / 顺序播放"
+                className={clsx('tap text-[12px]', playMode !== 'list' ? 'text-brand-deep' : 'text-ink-faint')}
+                onClick={() => setPlayMode(playMode === 'list' ? 'shuffle' : playMode === 'shuffle' ? 'one' : 'list')}
+                title="顺序播放 / 随机播放 / 单曲循环"
               >
-                {loop === 'one' ? '单曲' : '顺序'}
+                {playMode === 'shuffle' ? '随机' : playMode === 'one' ? '单曲' : '顺序'}
               </button>
             </div>
           </div>
@@ -310,6 +414,13 @@ export function MusicRoomScreen() {
                           </span>
                           {t.hisNote && <span className="mt-0.5 block truncate text-[11px] text-brand-deep">他：{t.hisNote}</span>}
                         </span>
+                      </button>
+                      <button
+                        className="tap shrink-0 px-0.5 text-[14px] leading-none text-ink-sub"
+                        title={favoriteOf(t.id) ? '取消收藏这首歌' : '收藏这首歌'}
+                        onClick={() => toggleTrackFavorite(t)}
+                      >
+                        {favoriteOf(t.id) ? '★' : '☆'}
                       </button>
                       <span className={clsx('shrink-0 text-[10px]', t.addedBy === 'him' ? 'text-brand-deep' : 'text-ink-faint')}>
                         {t.addedBy === 'him' ? '他加的' : '我加的'}

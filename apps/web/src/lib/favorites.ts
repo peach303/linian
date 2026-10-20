@@ -1,4 +1,4 @@
-import type { FavoriteItem, Letter, Message, Moment } from '@/types'
+import type { FavoriteItem, Letter, Message, Moment, Track } from '@/types'
 
 /**
  * 收藏夹的小工具：把一条消息 / 一封信 / 一条动态压成快照。
@@ -12,6 +12,7 @@ export const FAVORITE_KIND_LABEL: Record<FavoriteItem['kind'], string> = {
   VOICE: '语音',
   LETTER: '信件',
   MOMENT: '朋友圈',
+  MUSIC: '音乐',
 }
 
 /** 列表里的细分类：聊天 / 字卡 / 推送 / 语音 / 信件 / 朋友圈 */
@@ -19,13 +20,14 @@ export function favoriteCategory(f: FavoriteItem): string {
   if (f.kind === 'LETTER') return '信件'
   if (f.kind === 'MOMENT') return '朋友圈'
   if (f.kind === 'VOICE') return '语音'
+  if (f.kind === 'MUSIC') return '音乐'
   const mk = String(f.payload?.messageKind ?? '')
   if (mk === 'CARD') return '字卡'
   if (mk === 'SEARCH_PUSH') return '推送'
   return '聊天'
 }
 
-export const FAVORITE_CATEGORIES = ['全部', '聊天', '字卡', '推送', '语音', '信件', '朋友圈'] as const
+export const FAVORITE_CATEGORIES = ['全部', '聊天', '字卡', '推送', '语音', '信件', '朋友圈', '音乐'] as const
 
 /** 他收藏我的东西时，默认写下的原因（可在「收藏」页增删） */
 export const DEFAULT_FAVORITE_REASONS = [
@@ -102,6 +104,28 @@ export function favoriteFromLetter(
       body: letter.body,
       fromId: letter.fromId,
       createdAt: letter.createdAt,
+    },
+  }
+}
+
+export function favoriteFromTrack(
+  track: Track,
+  owner: FavoriteItem['owner'],
+): Omit<FavoriteItem, 'id' | 'createdAt'> {
+  return {
+    owner,
+    author: owner === 'me' ? 'dream' : 'me',
+    kind: 'MUSIC',
+    refId: track.id,
+    title: track.title,
+    text: track.artist || '未知歌手',
+    payload: {
+      trackId: track.id,
+      title: track.title,
+      artist: track.artist,
+      cover: track.cover,
+      source: track.source,
+      addedBy: track.addedBy,
     },
   }
 }

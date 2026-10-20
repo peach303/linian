@@ -39,6 +39,8 @@ export interface Appearance {
   /** 主界面照片墙：三张可以叠着摆、拖着换位置 */
   photos: HomePhoto[]
   chatBackground: BackgroundValue
+  /** 朋友圈顶部背景（本机上传的图 / 预设 / 纯色） */
+  momentsBackground: BackgroundValue
   bubble: BubbleStyle
   /** 主界面五大入口的图标自定义 */
   entryIcons: Partial<Record<ScreenId, IconValue>>
@@ -69,6 +71,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
     { url: '', x: 0, y: 4, rot: -1, z: 3 },
   ],
   chatBackground: { mode: 'preset', value: 'plain', blur: 0, dim: 0 },
+  momentsBackground: { mode: 'preset', value: 'linian-blue', blur: 0, dim: 0 },
   bubble: { me: '#a8d4ff', peer: '#ffffff', ink: '#1a2430', radius: 0.5, tail: true, customCss: '' },
   entryIcons: {},
 }

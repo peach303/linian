@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
-import { STATIC_ONLY } from '@/lib/deploy'
+import { API_ENABLED, PROXY_MODE } from '@/lib/deploy'
 import { pushNow } from '@/lib/engine/search'
 import { searchReason, searchWeb, type SearchResult } from '@/lib/search'
 import { fromNow } from '@/lib/time'
@@ -43,6 +43,8 @@ export function IntegrationScreen() {
   const removeSearchLog = useAppStore((s) => s.removeSearchLog)
   const clearSearchLogs = useAppStore((s) => s.clearSearchLogs)
 
+  /** 免费代理模式下保存 / 断开 Key 用的管理密码；只留在本次页面内存里，不写 localStorage */
+  const [adminPassword, setAdminPassword] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [groupId, setGroupId] = useState<string | null>(null)
   const [model, setModel] = useState<string | null>(null)
@@ -84,10 +86,13 @@ export function IntegrationScreen() {
 
   const effModel = model ?? status.minimax.model
   const effVoice = voiceId ?? status.minimax.voiceId
+  const canSave = !PROXY_MODE || adminPassword.trim().length > 0
+  const admin = PROXY_MODE ? adminPassword.trim() : undefined
 
   const doSave = async () => {
     setTestNote(null)
     const ok = await save({
+      adminPassword: admin,
       minimax: {
         // 留空 = 不改（避免「只想换音色」却把 Key 抹掉）
         apiKey: apiKey.trim() || undefined,
@@ -131,7 +136,7 @@ export function IntegrationScreen() {
   const doDisconnect = async () => {
     audioRef.current?.pause()
     setApiKey('')
-    await save({ minimax: { clear: true } })
+    await save({ adminPassword: admin, minimax: { clear: true } })
   }
 
   /* ── 联网搜索（博查） ── */
@@ -141,6 +146,7 @@ export function IntegrationScreen() {
   const doSaveSearch = async () => {
     setSearchNote(null)
     const ok = await save({
+      adminPassword: admin,
       // 留空 = 不改（避免「只想换时效」却把 Key 抹掉）
       search: { apiKey: searchKey.trim() || undefined, freshness: effFreshness, count: effCount },
     })
@@ -183,7 +189,7 @@ export function IntegrationScreen() {
   const doDisconnectSearch = async () => {
     setSearchKey('')
     setResults([])
-    await save({ search: { clear: true } })
+    await save({ adminPassword: admin, search: { clear: true } })
   }
 
   const enabled = rules.voice.enabled
@@ -200,7 +206,7 @@ export function IntegrationScreen() {
       />
 
       <div className="no-scrollbar flex-1 space-y-3 overflow-y-auto px-3 py-3">
-        {STATIC_ONLY && (
+        {!API_ENABLED && (
           <section className="rounded-xl border border-brand/30 bg-brand/5 p-3">
             <p className="text-[13px] font-medium text-ink">静态托管版</p>
             <p className="mt-1 text-[11px] leading-relaxed text-ink-sub">
@@ -209,8 +215,35 @@ export function IntegrationScreen() {
           </section>
         )}
 
-        {!STATIC_ONLY && (
+        {PROXY_MODE && (
+          <section className="rounded-xl border border-brand/30 bg-brand/5 p-3">
+            <p className="text-[13px] font-medium text-ink">静态站 + 免费代理</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-ink-sub">
+              聊天记录仍然只存在这台设备；语音和联网搜索通过 Deno Deploy 免费代理转发，Key 存在代理的 KV 里，网页和聊天记录里都没有 Key。
+              保存 / 断开 Key 需要管理密码 —— 它只用于这一次请求，不会写进浏览器存储。
+            </p>
+          </section>
+        )}
+
+        {API_ENABLED && (
           <>
+        {PROXY_MODE && (
+          <section className="rounded-xl bg-surface p-3 shadow-card">
+            <Field label="代理管理密码" hint="只用来保存 / 断开 Key，不会保存到本地">
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="部署代理时在 Deno Deploy 里设置的 ADMIN_PASSWORD"
+                className="w-full rounded-lg bg-page px-3 py-2.5 text-[14px] text-ink outline-none ring-1 ring-hairline placeholder:text-ink-faint focus:ring-brand"
+              />
+            </Field>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+              不填也能读「已接通 / 未配置」的状态；只有点保存或断开时才需要它。密码只留在当前页面内存里，刷新就没了。
+            </p>
+          </section>
+        )}
+
         {/* ── 状态 ── */}
         <section className="rounded-xl bg-surface p-3 shadow-card">
           <div className="flex items-center gap-2">
@@ -224,15 +257,17 @@ export function IntegrationScreen() {
               MiniMax 语音
               <span className="ml-1 text-[12px] text-ink-sub">
                 {status.minimax.configured
-                  ? `已接通 · ${status.minimax.source === 'env' ? '.env 里的 Key' : '设置里填的 Key'} ${status.minimax.hint}`
+                  ? `已接通 · ${status.minimax.source === 'env' ? (PROXY_MODE ? 'Deno Deploy 环境变量里的 Key' : '.env 里的 Key') : '设置里填的 Key'} ${status.minimax.hint}`
                   : reachable
                     ? '未配置'
-                    : '后端没在跑'}
+                    : PROXY_MODE
+                      ? '代理没连上'
+                      : '后端没在跑'}
               </span>
             </span>
           </div>
           <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-            音频由后端代取（浏览器直连 MiniMax 会被 CORS 挡）。Key 只存在你自己的后端，接口只回尾号；
+            音频由服务端 / 免费代理代取（浏览器直连 MiniMax 会被 CORS 挡）。Key 只存在服务端，接口只回尾号；
             没接通时引擎不会伪造语音，只把「命中但未配置」写进抽签轨迹。
           </p>
         </section>
@@ -302,7 +337,7 @@ export function IntegrationScreen() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="tap rounded-lg bg-brand px-3 py-2 text-[13px] text-white disabled:opacity-50"
-              disabled={saving}
+              disabled={saving || !canSave}
               onClick={() => void doSave()}
             >
               保存
@@ -320,9 +355,10 @@ export function IntegrationScreen() {
             {status.minimax.configured &&
               (confirmOff === 'minimax' ? (
                 <div className="flex w-full flex-wrap items-center gap-2 rounded-lg bg-[#fdecec] px-3 py-2 text-[12px] text-[#c0392b]">
-                  <span>断开 = 清掉后端那把 Key（只回尾号，清掉要重填）</span>
+                  <span>断开 = 清掉服务端那把 Key（只回尾号，清掉要重填）</span>
                   <button
-                    className="tap ml-auto rounded-md bg-[#FA5151] px-2.5 py-1 font-semibold text-white"
+                    className="tap ml-auto rounded-md bg-[#FA5151] px-2.5 py-1 font-semibold text-white disabled:opacity-50"
+                    disabled={!canSave}
                     onClick={() => {
                       setConfirmOff(null)
                       void doDisconnect()
@@ -352,8 +388,17 @@ export function IntegrationScreen() {
 
           {!status.minimax.configured && (
             <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-              也可以不填这里：把 <code>MINIMAX_API_KEY</code> / <code>MINIMAX_GROUP_ID</code> 写进{' '}
-              <code>apps/server/.env</code> 再重启后端。两处都有时以设置页为准。
+              {PROXY_MODE ? (
+                <>
+                  也可以不填这里：在 Deno Deploy 后台给代理加 <code>MINIMAX_API_KEY</code> /{' '}
+                  <code>MINIMAX_GROUP_ID</code> 环境变量。两处都有时以这里保存的为准。
+                </>
+              ) : (
+                <>
+                  也可以不填这里：把 <code>MINIMAX_API_KEY</code> / <code>MINIMAX_GROUP_ID</code> 写进{' '}
+                  <code>apps/server/.env</code> 再重启后端。两处都有时以设置页为准。
+                </>
+              )}
             </p>
           )}
         </Card>
@@ -402,15 +447,17 @@ export function IntegrationScreen() {
               博查搜索
               <span className="ml-1 text-[12px] text-ink-sub">
                 {status.search.configured
-                  ? `已接通 · ${status.search.source === 'env' ? '.env 里的 Key' : '设置里填的 Key'} ${status.search.hint}`
+                  ? `已接通 · ${status.search.source === 'env' ? (PROXY_MODE ? 'Deno Deploy 环境变量里的 Key' : '.env 里的 Key') : '设置里填的 Key'} ${status.search.hint}`
                   : reachable
                     ? '未配置'
-                    : '后端没在跑'}
+                    : PROXY_MODE
+                      ? '代理没连上'
+                      : '后端没在跑'}
               </span>
             </span>
           </div>
           <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-            由后端代搜（浏览器直连博查会被 CORS 挡，Key 也不该下发到前端）。Key 只存在你自己的后端，接口只回尾号。
+            由服务端 / 免费代理代搜（浏览器直连博查会被 CORS 挡，Key 也不该下发到前端）。Key 只存在服务端，接口只回尾号。
             <span className="text-ink-sub">
               搜到才推那张卡；搜不到 —— 没配 Key / 断网 / 被限流 / 一条结果都没有 —— <b>一条消息都不会发</b>，只在下面的轨迹里记一条失败。
             </span>
@@ -458,7 +505,7 @@ export function IntegrationScreen() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="tap rounded-lg bg-brand px-3 py-2 text-[13px] text-white disabled:opacity-50"
-              disabled={saving}
+              disabled={saving || !canSave}
               onClick={() => void doSaveSearch()}
             >
               保存
@@ -473,9 +520,10 @@ export function IntegrationScreen() {
             {status.search.configured &&
               (confirmOff === 'search' ? (
                 <div className="flex w-full flex-wrap items-center gap-2 rounded-lg bg-[#fdecec] px-3 py-2 text-[12px] text-[#c0392b]">
-                  <span>断开 = 清掉后端那把 Key（只回尾号，清掉要重填）</span>
+                  <span>断开 = 清掉服务端那把 Key（只回尾号，清掉要重填）</span>
                   <button
-                    className="tap ml-auto rounded-md bg-[#FA5151] px-2.5 py-1 font-semibold text-white"
+                    className="tap ml-auto rounded-md bg-[#FA5151] px-2.5 py-1 font-semibold text-white disabled:opacity-50"
+                    disabled={!canSave}
                     onClick={() => {
                       setConfirmOff(null)
                       void doDisconnectSearch()

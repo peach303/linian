@@ -44,6 +44,8 @@ export interface RuleConfig {
     conjunction: ProbToggle
     /** 标点符号开关 */
     punctuation: ProbToggle
+    /** 他说话时自带「本意 / 在说谁」的概率（长按也可以随时问） */
+    meaning: ProbToggle
     multiCard: ProbToggle & { count: Range2 }
     freeSentence: ProbToggle
     /** 拾取：把我聊过的话存进他的字卡库 */
@@ -106,6 +108,8 @@ export interface RuleConfig {
     thanks: ProbToggle
     /** 他回一个红包给我（独立掷签） */
     back: { enabled: boolean; p: number; amount: Range2; delay: Range2 }
+    /** 他主动发一个红包给我（不是等我先发） */
+    sendMe: ProbToggle & { cooldownMin: number; amount: Range2 }
   }
 
   gift: {
@@ -139,6 +143,8 @@ export interface RuleConfig {
     listenMin: Range2
     /** 他回推一首歌给我 */
     shareBack: ProbToggle
+    /** 他主动邀请我一起听 */
+    inviteMe: ProbToggle & { cooldownMin: number }
   }
 
   doodle: {

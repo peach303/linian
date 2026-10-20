@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { STATIC_ONLY } from '@/lib/deploy'
+import { API_ENABLED, PROXY_MODE } from '@/lib/deploy'
 import { INTEGRATIONS } from '@/lib/integrations'
 import {
   EMPTY_INTEGRATIONS,
@@ -26,7 +26,7 @@ interface IntegrationsState {
  * 接入状态（MiniMax 语音 / 联网搜索）
  *
  * 只做三件事：读状态 → 写状态 → **把 `INTEGRATIONS` 同步给引擎**。
- * Key 的明文永远在服务端，这里拿到的只有「配没配 + 尾号」。
+ * Key 的明文永远在服务端（本地完整版或免费代理），这里拿到的只有「配没配 + 尾号」。
  */
 export const useIntegrationsStore = create<IntegrationsState>((set) => ({
   status: EMPTY_INTEGRATIONS,
@@ -36,14 +36,14 @@ export const useIntegrationsStore = create<IntegrationsState>((set) => ({
   note: '',
 
   refresh: async () => {
-    if (STATIC_ONLY) {
+    if (!API_ENABLED) {
       INTEGRATIONS.tts = false
       INTEGRATIONS.search = false
       set({
         status: EMPTY_INTEGRATIONS,
         reachable: false,
         loaded: true,
-        note: '静态托管模式：没有后端，语音 / 搜索 / 同步不可用',
+        note: '纯静态模式：没有后端或代理，语音 / 搜索 / 同步不可用',
       })
       return
     }
@@ -54,22 +54,33 @@ export const useIntegrationsStore = create<IntegrationsState>((set) => ({
       INTEGRATIONS.tts = s.minimax.configured
       INTEGRATIONS.search = s.search.configured
     }
-    set({ status, reachable: Boolean(s), loaded: true })
+    set({
+      status,
+      reachable: Boolean(s),
+      loaded: true,
+      note: !s && PROXY_MODE ? '免费代理没连上（检查代理地址 / 部署状态）' : '',
+    })
   },
 
   save: async (patch) => {
-    if (STATIC_ONLY) {
+    if (!API_ENABLED) {
       set({
         saving: false,
         reachable: false,
-        note: '静态托管模式不能配置后端接口；Key 也不会写进网页',
+        note: '纯静态模式不能配置接口；Key 也不会写进网页',
       })
       return false
     }
     set({ saving: true, note: '' })
     const next = await saveIntegrations(patch)
     if (!next) {
-      set({ saving: false, reachable: false, note: '后端没在跑（`npm run dev:api`）—— 配置存不上' })
+      set({
+        saving: false,
+        reachable: false,
+        note: PROXY_MODE
+          ? '保存失败：管理密码不对，或免费代理暂时连不上'
+          : '后端没在跑（`npm run dev:api`）—— 配置存不上',
+      })
       return false
     }
     INTEGRATIONS.tts = next.minimax.configured

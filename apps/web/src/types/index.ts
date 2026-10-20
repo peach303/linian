@@ -31,6 +31,12 @@ export type MessageKind =
 
 export type MessageStatus = 'SENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'RECALLED' | 'FAILED'
 
+/** 这句话在说谁：我 / 他自己 / 我们 */
+export type MessageAbout = 'me' | 'him' | 'us'
+
+/** 本意的来源：字卡自己跳的 / 他挑的 / 从我说过的话拾的 / 系统随机 / 他自己想的 */
+export type MessageMeaningSource = 'card' | 'custom' | 'picked' | 'random' | 'engine'
+
 /** 情绪 / 心意 / 意图 三合一标签 */
 export interface EmotionTag {
   id: string
@@ -75,6 +81,14 @@ export interface Message {
   latencyMs?: number
   /** 引擎抽签轨迹（复盘用；对应 DB 的 messages.plan JSONB） */
   plan?: ReplyTrace
+  /** 这句话的本意（长按问他，或引擎按概率自带） */
+  meaning?: string
+  /** 本意是在说谁 */
+  about?: MessageAbout
+  /** 本意是从哪来的：字卡 / 他挑的 / 拾取 / 随机 / 他自己 */
+  meaningSource?: MessageMeaningSource
+  /** 是不是我长按问出来的（引擎自带的不标） */
+  meaningAsked?: boolean
   createdAt: string
 }
 
@@ -99,7 +113,7 @@ export interface Anniversary {
  * 所以「我收藏他的」和「他收藏我的」能分开摆，不会混成一锅。
  * 收藏的是**快照**：原消息 / 原信后来被删了，收藏里仍然看得到。
  */
-export type FavoriteKind = 'MESSAGE' | 'VOICE' | 'LETTER' | 'MOMENT'
+export type FavoriteKind = 'MESSAGE' | 'VOICE' | 'LETTER' | 'MOMENT' | 'MUSIC'
 
 export interface FavoriteItem {
   id: string
@@ -325,6 +339,8 @@ export interface MusicPayload {
   listenMin?: number
   /** 他回推给我的那首（用于「他推的歌」卡片） */
   from?: 'me' | 'him'
+  /** 邀请的是房间歌单里的哪一首（点进房间时直接选中） */
+  trackId?: string
 }
 
 /* ─────────────────────── 涂鸦 ─────────────────────── */
@@ -397,6 +413,8 @@ export interface MusicRoom {
   heJoinedAt?: string
   /** 他这次准备待到什么时候 */
   heStaysUntil?: string
+  /** 播放模式：顺序 / 随机 / 单曲循环（他也可以改） */
+  playMode?: 'list' | 'shuffle' | 'one'
   messages: RoomMessage[]
 }
 
@@ -834,6 +852,8 @@ export interface Letter {
   replyToId?: string
   /** 他写在这封信（我写的信）上的蓝色批注 */
   annotations: LetterAnnotation[]
+  /** 随信附上的图片（本机上上传的 dataURL；旧信没有这个字段） */
+  images?: string[]
   /** 他主动寄来的信 → 列表里带 ❤️（对应 `proactive.letter`） */
   proactive?: boolean
   createdAt: string

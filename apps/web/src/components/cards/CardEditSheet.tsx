@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useState, type ReactNode } from 'react'
 import { Slider, Switch } from '@/components/settings/controls'
 import { TYPE_META, cardHash, cardRates, makeCard, pct, typeMeta } from '@/lib/cards'
-import { pickImage } from '@/lib/file'
+import { pickImage, pickSticker } from '@/lib/file'
 import { useCardsStore } from '@/store/useCardsStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useRulesStore } from '@/store/useRulesStore'
@@ -29,6 +29,9 @@ export function CardEditSheet() {
 
   const locked = !isNew && draft.source === 'SYSTEM'
   const meta = typeMeta(draft.type)
+  /** 图片 / 表情包都靠 mediaUrl；表情包也可以只写名字 */
+  const isMediaCard = draft.type === 'IMAGE' || draft.type === 'STICKER'
+  const isSticker = draft.type === 'STICKER'
 
   /** 把草稿并入现有卡列表算出「池内占比 / 命中率」 */
   const preview = (() => {
@@ -43,6 +46,8 @@ export function CardEditSheet() {
     const text = draft.text?.trim()
     if (draft.type === 'IMAGE') {
       if (!draft.mediaUrl) return setErr('图片卡需要上传一张图片')
+    } else if (draft.type === 'STICKER') {
+      if (!draft.mediaUrl && !text) return setErr('表情包需要上传动图，或者写一个名字')
     } else if (!text) {
       return setErr('内容不能为空')
     }
@@ -117,19 +122,34 @@ export function CardEditSheet() {
           </Field>
 
           {/* 内容 */}
-          <Field label={draft.type === 'IMAGE' ? '图片' : '内容'}>
-            {draft.type === 'IMAGE' ? (
+          <Field label={isSticker ? '表情包动图' : draft.type === 'IMAGE' ? '图片' : '内容'}>
+            {isMediaCard ? (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    className="tap rounded-lg bg-page px-2.5 py-1.5 text-[12px] text-ink-sub ring-1 ring-hairline"
-                    onClick={() => pickImage((url) => set({ mediaUrl: url }))}
+                    disabled={locked}
+                    className={clsx(
+                      'tap rounded-lg bg-page px-2.5 py-1.5 text-[12px] text-ink-sub ring-1 ring-hairline',
+                      locked && 'opacity-50',
+                    )}
+                    onClick={() =>
+                      isSticker
+                        ? pickSticker((url) => set({ mediaUrl: url }), { onError: setErr })
+                        : pickImage((url) => set({ mediaUrl: url }), undefined, {
+                            staticOnly: true,
+                            onError: setErr,
+                          })
+                    }
                   >
-                    ⬆ 上传图片
+                    {isSticker ? '⬆ 上传 GIF / 动图' : '⬆ 上传图片'}
                   </button>
                   {draft.mediaUrl && (
                     <button
-                      className="tap rounded-lg bg-page px-2.5 py-1.5 text-[12px] text-ink-sub ring-1 ring-hairline"
+                      disabled={locked}
+                      className={clsx(
+                        'tap rounded-lg bg-page px-2.5 py-1.5 text-[12px] text-ink-sub ring-1 ring-hairline',
+                        locked && 'opacity-50',
+                      )}
                       onClick={() => set({ mediaUrl: undefined })}
                     >
                       移除
@@ -137,8 +157,35 @@ export function CardEditSheet() {
                   )}
                 </div>
                 {draft.mediaUrl && (
-                  <img src={draft.mediaUrl} alt="" className="max-h-40 rounded-xl object-cover ring-1 ring-hairline" />
+                  <img
+                    src={draft.mediaUrl}
+                    alt=""
+                    className={clsx(
+                      'max-h-40 max-w-full rounded-xl ring-1 ring-hairline',
+                      isSticker ? 'object-contain' : 'object-cover',
+                    )}
+                  />
                 )}
+                {isSticker && (
+                  <input
+                    value={draft.text ?? ''}
+                    disabled={locked}
+                    onChange={(e) => {
+                      set({ text: e.target.value })
+                      setErr('')
+                    }}
+                    placeholder="给这个表情包起个名字（可选）"
+                    className={clsx(
+                      'w-full rounded-xl bg-page px-3 py-2 text-[13px] text-ink outline-none ring-1 ring-hairline focus:ring-brand placeholder:text-ink-faint',
+                      locked && 'opacity-60',
+                    )}
+                  />
+                )}
+                <p className="text-[11px] leading-relaxed text-ink-faint">
+                  {isSticker
+                    ? '支持 GIF / 动态 WebP / APNG，也支持普通图片；抽到这张卡时直接发图。'
+                    : '图片卡只收静态图片；GIF / 动图请用「表情包」类型。'}
+                </p>
               </div>
             ) : (
               <textarea

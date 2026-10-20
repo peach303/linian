@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
 import { PromptSheet } from '@/components/common/PromptSheet'
-import { STATIC_ONLY } from '@/lib/deploy'
+import { API_ENABLED, PROXY_MODE, STATIC_ONLY } from '@/lib/deploy'
 import { pickImage } from '@/lib/file'
+import {
+  notificationPermission,
+  requestNotificationPermission,
+  testNotification,
+  type NotifyPermission,
+} from '@/lib/notify'
 import { THEME_PRESETS } from '@/lib/theme'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useIntegrationsStore } from '@/store/useIntegrationsStore'
 import { useRulesStore } from '@/store/useRulesStore'
+import { useUIStore } from '@/store/useUIStore'
 import { clearConversation, clearMessages, flush, isOnline } from '@/lib/repo'
 
 /**
@@ -29,6 +36,59 @@ export function SettingsScreen() {
   const [syncLabel, setSyncLabel] = useState('点此补发离线操作')
   /** 正在改的昵称（null = 没在改） */
   const [editing, setEditing] = useState<null | 'me' | 'dream'>(null)
+
+  /* ── 消息提醒 / 后台保活 ── */
+  const notifyOn = useUIStore((s) => s.messageNotify)
+  const setNotifyOn = useUIStore((s) => s.setMessageNotify)
+  const keepAlive = useUIStore((s) => s.backgroundKeepAlive)
+  const setKeepAlive = useUIStore((s) => s.setBackgroundKeepAlive)
+  const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>(() => notificationPermission())
+  const [notifyNote, setNotifyNote] = useState('')
+
+  const permLabel: Record<NotifyPermission, string> = {
+    unsupported: '浏览器不支持',
+    default: '还没授权',
+    granted: '系统已授权',
+    denied: '权限被拒绝',
+  }
+
+  const enableNotify = async () => {
+    const p = await requestNotificationPermission()
+    setNotifyPerm(p)
+    if (p === 'granted') {
+      setNotifyOn(true)
+      setNotifyNote('已开启。页面在后台时收到他的新消息会弹系统通知；在别的页面会弹应用内小窗。')
+    } else if (p === 'denied') {
+      setNotifyOn(false)
+      setNotifyNote('浏览器拒绝了通知权限。要去浏览器的网站设置里重新允许，网页这边改不了。')
+    } else {
+      setNotifyNote('没有拿到权限，可以再点一次试试。')
+    }
+  }
+
+  const toggleNotify = async () => {
+    // 还没授权时，点一下先申请权限，而不是把开关关掉
+    if (notifyPerm !== 'granted') {
+      await enableNotify()
+      return
+    }
+    if (notifyOn) {
+      setNotifyOn(false)
+      setNotifyNote('已关闭消息提醒。')
+      return
+    }
+    setNotifyOn(true)
+    setNotifyNote('已开启消息提醒。')
+  }
+
+  const doTestNotify = async () => {
+    const ok = await testNotification(dream.nickname)
+    setNotifyNote(
+      ok
+        ? '测试通知已发出。如果通知栏没看到，检查系统 / 浏览器的通知权限。'
+        : '还没有通知权限，先点上面的「消息通知」开启。',
+    )
+  }
 
   const doSync = async () => {
     setSyncLabel('同步中…')
@@ -112,21 +172,60 @@ export function SettingsScreen() {
           <Row
             label="MiniMax 语音"
             value={
-              STATIC_ONLY
+              !API_ENABLED
                 ? '静态版不可用'
                 : integrations.minimax.configured
                   ? `已接通 · ${integrations.minimax.hint}`
-                  : '未配置 · 接通后他能真的出声'
+                  : PROXY_MODE
+                    ? '未配置 · 走免费代理'
+                    : '未配置 · 接通后他能真的出声'
             }
             onClick={() => push('integration')}
             chevron
           />
           <Row
             label="联网搜索推送"
-            value={STATIC_ONLY ? '静态版不可用' : searchOn ? '已开启 · 搜到才推' : '已关闭'}
+            value={
+              !API_ENABLED
+                ? '静态版不可用'
+                : searchOn
+                  ? `已开启 · ${PROXY_MODE ? '走免费代理' : '搜到才推'}`
+                  : '已关闭'
+            }
             onClick={() => push('integration')}
             chevron
           />
+        </Group>
+
+        {/* ── 消息提醒 ── */}
+        <Group title="消息提醒">
+          <Row
+            label="消息通知"
+            value={`${
+              notifyPerm === 'granted' ? (notifyOn ? '已开启' : '已关闭') : notifyPerm === 'denied' ? '已关闭' : '待授权'
+            } · ${permLabel[notifyPerm]}`}
+            onClick={() => void toggleNotify()}
+            chevron
+          />
+          <Row
+            label="聊天后台保活"
+            value={keepAlive ? '已开启 · 尽力保活' : '已关闭'}
+            onClick={() => {
+              setKeepAlive(!keepAlive)
+              setNotifyNote(
+                !keepAlive
+                  ? '已开启后台保活：会循环播放一段几乎无声的音频，尽量让标签页不被冻结。系统仍可能杀掉它。'
+                  : '已关闭后台保活。',
+              )
+            }}
+            chevron
+          />
+          <Row label="发一条测试通知" value="看看通知栏" onClick={() => void doTestNotify()} />
+          <p className="px-3 py-2.5 text-[11px] leading-relaxed text-ink-faint">
+            网页没有真正的系统级后台保活。切后台后，系统仍可能在省电 / 内存紧张时冻结或杀掉页面；被冻结后就不会再产生新消息，也就不会弹通知。
+            通知只在网页还活着时有效，不需要额外的推送 Key。
+          </p>
+          {notifyNote && <p className="px-3 pb-3 text-[11px] leading-relaxed text-brand-deep">{notifyNote}</p>}
         </Group>
 
         {/* ── 数据 ── */}

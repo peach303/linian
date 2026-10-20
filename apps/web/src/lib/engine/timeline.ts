@@ -30,10 +30,11 @@ import {
   makeRedPacketThanks,
   pickChoiceOption,
 } from './content'
+import { maybeAttachMeaning } from './meaning'
 import { inQuietHours } from './proactive'
 import { pick, seededHit, seededPick, seededRange } from './seed'
 import { HIS_DOODLES } from '@/lib/doodles'
-import { SONGS } from '@/lib/music'
+import { SONGS, trackFromSong } from '@/lib/music'
 import { dayKeyOf } from '@/lib/diary'
 import { favoriteFromLetter, favoriteFromMessage, favoriteFromMoment } from '@/lib/favorites'
 import { nid } from '@/lib/ids'
@@ -330,6 +331,7 @@ export function pushHisMessage(opts: {
   text: string
   quoteOf?: Message
   payload?: Record<string, unknown>
+  proactive?: boolean
 }) {
   const { dream } = useAppStore.getState()
   const chat = useChatStore.getState()
@@ -342,11 +344,13 @@ export function pushHisMessage(opts: {
     status: 'SENT',
     text: opts.text,
     payload: opts.payload,
+    proactive: opts.proactive,
     quoteOf: q ? { id: q.id, text: q.text ?? '', senderId: q.senderId } : undefined,
     createdAt: new Date().toISOString(),
   }
-  chat.pushMessage(msg)
-  return msg
+  const enriched = maybeAttachMeaning(msg, useRulesStore.getState().saved.chat.meaning.p)
+  chat.pushMessage(enriched)
+  return enriched
 }
 
 /**
@@ -510,6 +514,49 @@ function sendHisRedPacketBack(id: string) {
     payload: { amount, blessing, isRandom: false },
   })
   console.debug('[engine] 他回了一个红包', `¥${amount.toFixed(2)}`)
+}
+
+/** 他主动发一个红包（`redPacket.sendMe`）—— 不用我先发，金额随机、可以很大 */
+function hisRedPacketOpportunity(now: number): TimelineEvent | null {
+  const { messages } = useChatStore.getState()
+  const { dream } = useAppStore.getState()
+  const rules = useRulesStore.getState().saved
+  const rp = rules.redPacket.sendMe
+  if (!rp?.enabled) return null
+
+  const lastAt = messages
+    .filter((m) => m.senderId === dream.id && m.kind === 'RED_PACKET')
+    .reduce((acc, m) => Math.max(acc, +new Date(m.createdAt)), 0)
+  if (now - lastAt < Math.max(0, rp.cooldownMin) * 60_000) return null
+
+  const bucket = Math.floor(now / CHECK_MS)
+  if (lastAt >= bucketStart(now)) return null
+  if (!seededHit(`rps:${bucket}`, rp.p)) return null
+  if (inQuietHours(rules.proactive.message.quietHours, new Date(now))) return null
+
+  return {
+    key: `rp-auto:${bucket}`,
+    at: bucketStart(now) + seededRange(`rps-d:${bucket}`, [20_000, 300_000]),
+    run: () => sendHisRedPacket(bucket),
+  }
+}
+
+function sendHisRedPacket(bucket: number) {
+  const rules = useRulesStore.getState().saved
+  const rp = rules.redPacket.sendMe
+  const range = rp?.amount ?? [52, 99999]
+  const lucky = [520, 1314, 5200, 6666, 9999, 13140, 52000, 99999]
+  const amount = seededHit(`rps-lucky:${bucket}`, 0.22)
+    ? lucky[Math.floor(seededRange(`rps-lucky-pick:${bucket}`, [0, lucky.length - 1]))]
+    : Number(seededRange(`rps-amt:${bucket}`, range).toFixed(2))
+  const blessing = makeRedPacketBlessing()
+  pushHisMessage({
+    kind: 'RED_PACKET',
+    text: blessing,
+    proactive: true,
+    payload: { amount, blessing, isRandom: true, from: 'him' },
+  })
+  console.debug('[engine] 他主动发了一个红包', `¥${amount.toFixed(2)}`)
 }
 
 /** 我送出去的礼物 → 他收下（`gift.accept`） */
@@ -701,6 +748,70 @@ function shareHisSong() {
   console.debug('[engine] 他回推了一首歌', song.title)
 }
 
+/** 他主动邀请我一起听（`music.inviteMe`）—— 不等我先发邀请 */
+function hisMusicOpportunity(now: number): TimelineEvent | null {
+  const { messages } = useChatStore.getState()
+  const { dream } = useAppStore.getState()
+  const rules = useRulesStore.getState().saved
+  const invite = rules.music.inviteMe
+  if (!invite?.enabled) return null
+
+  const lastAt = messages
+    .filter((m) => m.senderId === dream.id && m.kind === 'MUSIC_INVITE')
+    .reduce((acc, m) => Math.max(acc, +new Date(m.createdAt)), 0)
+  if (now - lastAt < Math.max(0, invite.cooldownMin) * 60_000) return null
+
+  const bucket = Math.floor(now / CHECK_MS)
+  if (lastAt >= bucketStart(now)) return null
+  if (!seededHit(`mus:${bucket}`, invite.p)) return null
+  if (inQuietHours(rules.proactive.message.quietHours, new Date(now))) return null
+
+  return {
+    key: `music-auto:${bucket}`,
+    at: bucketStart(now) + seededRange(`mus-d:${bucket}`, [20_000, 300_000]),
+    run: () => sendHisMusicInvite(bucket),
+  }
+}
+
+function sendHisMusicInvite(bucket: number) {
+  const app = useAppStore.getState()
+  const rules = useRulesStore.getState().saved
+  const room = app.room
+  const track = room.tracks.length ? seededPick(room.tracks, `mus-track:${bucket}`) : undefined
+  const fallbackSong = seededPick(SONGS, `mus-song:${bucket}`) ?? SONGS[0]!
+  const song = track ?? fallbackSong
+
+  let trackId = track?.id
+  if (!track && fallbackSong) {
+    const t = trackFromSong(fallbackSong, 'him')
+    app.addRoomTracks([t])
+    trackId = t.id
+  }
+
+  const at = new Date()
+  const listenMin = Math.round(seededRange(`mus-min:${bucket}`, rules.music.listenMin))
+  // 他发邀请时就已经在房间里了；点进「一起听」不会看到空房间
+  app.patchRoom({
+    heJoinedAt: at.toISOString(),
+    heStaysUntil: new Date(at.getTime() + listenMin * 60_000).toISOString(),
+    currentId: trackId,
+  })
+  pushHisMessage({
+    kind: 'MUSIC_INVITE',
+    text: `${song.title} - ${song.artist}`,
+    proactive: true,
+    payload: {
+      title: song.title,
+      artist: song.artist,
+      cover: song.cover,
+      from: 'him',
+      trackId,
+      listenMin,
+    },
+  })
+  console.debug('[engine] 他主动邀请你一起听', song.title)
+}
+
 /** 我画了一张 → 他回话（`doodle.reply`）→ 也可能画一张回你 */
 function hisDoodleResponse(): TimelineEvent[] {
   const { messages } = useChatStore.getState()
@@ -862,9 +973,11 @@ export function pendingTimeline(): TimelineEvent[] {
     ...hisAnnotationsToMyLetters(),
     ...hisAnswersToMyCards(),
     ...hisRedPacketResponse(),
+    hisRedPacketOpportunity(now),
     ...hisGiftResponse(),
     hisGiftOpportunity(now),
     ...hisMusicResponse(),
+    hisMusicOpportunity(now),
     ...hisDoodleResponse(),
     hisDoodleOpportunity(now),
     hisQuestionOpportunity(now),
