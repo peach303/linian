@@ -1,0 +1,19 @@
+# 只把「需要的东西」发进镜像构建上下文。
+# ⚠️ 特别是 apps/server/.data：那里面是你填的 MiniMax / 博查 Key，
+#    千万别让它进镜像（docker build 完可以用 `docker run --rm -it linian ls apps/server` 复查）。
+
+node_modules
+**/node_modules
+
+dist
+**/dist
+
+.data
+**/.data
+
+.env
+**/.env
+
+.git
+.github
+*.log

@@ -1,0 +1,47 @@
+# Render Blueprint：把 GitHub 仓库连上来，就按这个文件建一个能跑的服务
+#
+#   1) 代码推到 GitHub（记住先跑 npm run pack:public，别带 Key）
+#   2) render.com → New → Blueprint → 选这个仓库 → Apply
+#   3) 等它 build 完，给你的 https://linian-xxxx.onrender.com 就是完整 App
+#      （页面 + /api 同一个域名 → 手机上的语音 / 搜索推送都能用）
+#
+# 为什么不用 GitHub Pages：Pages 只发静态文件，没有进程替你拿 Key 去调
+# MiniMax / 博查，/api 会 404 → 语音和联网推送都用不了。
+
+services:
+  - type: web
+    name: linian
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install && npm run build:web
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: '20'
+      # ★ 访问密码：Render 会随机生成一串，部署完在 Dashboard → Environment 里能看见。
+      #   手机第一次打开会弹一次登录框（用户名随便填，密码填这个）。
+      #   不设的话：任何拿到链接的人都能看到你的聊天记录、用你的 Key —— 别裸奔。
+      - key: APP_PASSWORD
+        generateValue: true
+      # 语音 / 搜索的 Key：也可以不填，部署完进 App「设置 → 接入」里填（只写进这个实例的 .data）。
+      # 想更干净就填这里：值只存在 Render 的环境变量里，不进仓库、也不进 db.json。
+      # - key: MINIMAX_API_KEY
+      #   sync: false
+      # - key: MINIMAX_GROUP_ID
+      #   sync: false
+      # - key: MINIMAX_VOICE_ID
+      #   sync: false
+      # - key: BOCHA_API_KEY
+      #   sync: false
+      # 前端部署在别处（跨域）时才需要：填前端的域名，后端 CORS 才放行
+      # - key: WEB_ORIGIN
+      #   value: https://your-frontend.example.com
+
+    # 免费实例没有持久盘：重新部署 / 实例休眠重启会把 .data/db.json 清空。
+    # 聊天记录在你手机本地那份还在，重新打开会把历史补回去；字卡库会重新落预设。
+    # 想长期保存：换成付费 plan，再打开下面这段（挂到项目目录下的 .data）：
+    # disk:
+    #   name: linian-data
+    #   mountPath: /opt/render/project/src/apps/server/.data
+    #   sizeGB: 1

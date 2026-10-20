@@ -1,0 +1,873 @@
+// 黎念 LiNian — 数据库 Schema (PostgreSQL 16)
+// 生成：prisma generate / prisma migrate dev
+// 约定：所有 id 使用 cuid()；时间统一 UTC；软删除用 deletedAt
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── 枚举 ─────────────────────────────
+
+enum CardType {
+  TEXT        // 主字卡（文字）
+  KAOMOJI     // 颜文字
+  EMOJI       // emoji
+  STICKER     // 表情包
+  IMAGE       // 图片
+  PAT         // 拍一拍
+  VOICE       // 语音字卡
+  SENTENCE    // 梦角自由造句
+}
+
+enum CardSource {
+  SYSTEM      // AI 生成预设（可开关 / 可调占比 / 禁自由造句）
+  CUSTOM      // 自定义（全类型）
+  PICKED      // 拾取：从我的聊天中抓取
+}
+
+enum MessageKind {
+  TEXT
+  CARD
+  IMAGE
+  VOICE
+  PAT
+  QUOTE
+  CHOICE      // 抉择（帮选）
+  QUESTION    // 问卷
+  RED_PACKET
+  GIFT
+  MUSIC_INVITE
+  DOODLE
+  CALL_EVENT
+  SEARCH_PUSH // 联网搜索推送
+  SYSTEM
+}
+
+enum MessageStatus { SENDING SENT DELIVERED READ RECALLED FAILED }
+
+enum LetterStatus { DRAFT SENT DELIVERED REPLIED READ }
+
+enum CompanionScene { SLEEP STUDY WORK OTHER }
+
+enum RoomKind { WATCH READ }
+
+/// 片子从哪儿来：本机文件（Blob 留在设备上，库里只存标记）/ 直链 / B 站 / 只有片名
+enum WatchSourceKind { LOCAL URL BILIBILI TITLE }
+enum ReadSourceKind { LOCAL PASTE TITLE }
+
+enum CheckStatus { REQUESTED AGREED REFUSED EXPIRED }
+
+enum ApprovalStatus { PENDING APPROVED REJECTED BUSY }
+
+// ─────────────────────────── 用户与关系 ───────────────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  handle    String   @unique
+  password  String?                       // 邮箱/密码注册时使用
+  email     String?  @unique
+  nickname  String
+  avatarUrl String?
+  isDream   Boolean  @default(false)      // true = 梦角（虚构角色）
+  personaJson Json?                       // 梦角人设：性格 / 说话风格 / 背景
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  CoupleMember[]
+  messages     Message[]
+  moments      Moment[]
+  lettersFrom  Letter[]        @relation("LetterFrom")
+  lettersTo    Letter[]        @relation("LetterTo")
+
+  @@map("users")
+}
+
+model Couple {
+  id          String   @id @default(cuid())
+  name        String?
+  themeKey    String   @default("light-blue")  // 当前配色
+  createdAt   DateTime @default(now())
+
+  members     CoupleMember[]
+  anniversaries Anniversary[]
+  ruleConfigs RuleConfig[]
+  deck        CardDeck?
+  conversations Conversation[]
+  moments     Moment[]
+  letters     Letter[]
+  gifts       Gift[]
+  musicSessions MusicSession[]
+  companions  CompanionSession[]
+  diaries     DiaryEntry[]
+  watchRooms  WatchRoom[]
+  readRooms   ReadRoom[]
+  checkRequests CheckRequest[]
+  searchPushes SearchPush[]
+  favorites   Favorite[]
+  integrations IntegrationConfig[]
+  wordStats   WordStat[]
+  fitness     FitnessScore[]
+  usageEvents UsageEvent[]
+  proactiveJobs ProactiveJob[]
+
+  @@map("couples")
+}
+
+model CoupleMember {
+  id        String   @id @default(cuid())
+  coupleId  String
+  userId    String
+  role      String   @default("MEMBER")  // MEMBER | DREAM
+  joinedAt  DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, userId])
+  @@map("couple_members")
+}
+
+model Anniversary {
+  id          String   @id @default(cuid())
+  coupleId    String
+  title       String                       // 例：在一起
+  date        DateTime
+  recurring   Boolean  @default(true)      // 每年重复
+  showOnHome  Boolean  @default(true)      // 是否显示在主界面
+  icon        String?
+  sort        Int      @default(0)
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@map("anniversaries")
+}
+
+// ────────────────────────── 字卡库 / 情绪 ──────────────────────────
+
+model CardDeck {
+  id       String @id @default(cuid())
+  coupleId String @unique
+  presetsEnabled Boolean @default(true)    // 系统预设总开关
+  createdAt DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  cards  Card[]
+
+  @@map("card_decks")
+}
+
+model Card {
+  id         String     @id @default(cuid())
+  deckId     String
+  ownerId    String?                       // null = 共享牌组；否则归属某一方（拾取/收藏）
+  type       CardType
+  source     CardSource @default(CUSTOM)
+  text       String?                        // 文字 / 颜文字内容
+  mediaUrl   String?
+  category   String?                        // 日常 / 撒娇 / 问候 / 生气 …
+  weight     Float      @default(1)         // 该卡在占比中的相对权重
+  enabled    Boolean    @default(true)
+  isPublic   Boolean    @default(true)
+  hash       String?                        // 查重指纹（归一化文本 hash）
+  embedding  Float[]    @db.Vector(1024)?   // 预留向量查重（需 vector 扩展）
+  useCount   Int        @default(0)
+  lastUsedAt DateTime?
+  createdAt  DateTime   @default(now())
+  deletedAt  DateTime?
+
+  deck   CardDeck  @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  tags   CardTagLink[]
+  usages UsageEvent[]
+
+  @@index([deckId, type, enabled])
+  @@index([deckId, hash])
+  @@map("cards")
+}
+
+model EmotionTag {
+  id     String @id @default(cuid())
+  coupleId String?
+  name   String                       // 开心 / 想交流 / 失落 / 撒娇 / 生气 / 害羞 …
+  kind   String @default("EMOTION")   // EMOTION | INTENTION | HEART（心意）
+  color  String @default("#7FB6F0")
+  icon   String?
+  isSystem Boolean @default(false)
+
+  links CardTagLink[]
+
+  @@unique([coupleId, kind, name])
+  @@map("emotion_tags")
+}
+
+model CardTagLink {
+  cardId String
+  tagId  String
+  weight Float  @default(1)           // 一张卡可带多标签与强度
+
+  card Card       @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  tag  EmotionTag @relation(fields: [tagId],  references: [id], onDelete: Cascade)
+
+  @@id([cardId, tagId])
+  @@map("card_tag_links")
+}
+
+model PickupLog {
+  id        String   @id @default(cuid())
+  coupleId  String
+  messageId String                       // 被拾取的那条消息
+  cardId    String                       // 生成到「他」字卡库的卡
+  pickedBy  String                       // DREAM（通常是他拾取我）
+  createdAt DateTime @default(now())
+
+  @@map("pickup_logs")
+}
+
+// ───────────────────────────── 聊天 ─────────────────────────────
+
+model Conversation {
+  id        String   @id @default(cuid())
+  coupleId  String
+  title     String?
+  pinned    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  couple   Couple    @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  messages Message[]
+  calls    CallRecord[]
+
+  @@index([coupleId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  senderId       String
+  receiverId     String?
+  kind           MessageKind
+  status         MessageStatus @default(SENT)
+  text           String?                        // 纯文本 / 短载荷
+  payload        Json?                          // 复杂载荷（红包/礼物/问卷/涂鸦/搜索结果）
+  context        String         @default("CHAT") // CHAT | COMPANION | MUSIC | WATCH | READ
+  proactive      Boolean        @default(false)  // 主动消息 → UI 左上角小爱心
+  isVoice        Boolean        @default(false)
+  audioUrl       String?
+  audioDurationMs Int?
+  quoteOfId      String?
+  cardId         String?                         // 命中字卡时回填，用于统计
+  emotionTags    String[]                        // 打标结果
+  latencyMs      Int?                            // 引擎计算的拟真延迟
+  plan           Json?                           // 本次抽签详情（可复盘）
+  readAt         DateTime?
+  recalledAt     DateTime?
+  createdAt      DateTime        @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([senderId, proactive])
+  @@map("messages")
+}
+
+// 已读水位（避免逐条已读写库）
+model ReadCursor {
+  conversationId String
+  userId         String
+  lastReadMessageId String
+  updatedAt      DateTime @updatedAt
+
+  @@id([conversationId, userId])
+  @@map("read_cursors")
+}
+
+model CallRecord {
+  id             String   @id @default(cuid())
+  conversationId String
+  callerId       String
+  calleeId       String
+  status         ApprovalStatus
+  startedAt      DateTime @default(now())
+  answeredAt     DateTime?
+  endedAt        DateTime?
+  durationSec    Int?
+  isVideo        Boolean  @default(false)
+  simulated      Boolean  @default(true)   // 模拟通话（无真实音视频）
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("call_records")
+}
+
+model RedPacket {
+  id        String   @id @default(cuid())
+  coupleId  String
+  messageId String?
+  senderId  String
+  receiverId String?
+  amount    Decimal  @db.Decimal(10, 2)
+  isRandom  Boolean  @default(false)      // 随机金额
+  blessing  String   @default("恭喜发财，大吉大利")
+  claimedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("red_packets")
+}
+
+// ──────────────────── 互动卡片：抉择 / 问卷 / 涂鸦 / 礼物 ────────────────────
+
+model Choice {
+  id        String   @id @default(cuid())
+  coupleId  String
+  messageId String?
+  question  String
+  options   Json                        // [{ id, label, hint }]
+  multiple  Boolean  @default(false)
+  answerIds String[]
+  answeredAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@map("choices")
+}
+
+model Question {
+  id        String   @id @default(cuid())
+  coupleId  String
+  messageId String?
+  title     String
+  type      String   @default("SINGLE") // SINGLE | MULTI
+  options   Json                        // [{ id, label }]
+  timed     Boolean  @default(false)    // 定时问卷
+  dueAt     DateTime?
+  createdAt DateTime @default(now())
+
+  answers QuestionAnswer[]
+
+  @@map("questions")
+}
+
+model QuestionAnswer {
+  id         String   @id @default(cuid())
+  questionId String
+  userId     String
+  optionIds  String[]
+  text       String?
+  submittedAt DateTime @default(now())
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("question_answers")
+}
+
+model Doodle {
+  id        String   @id @default(cuid())
+  coupleId  String
+  messageId String?
+  baseUrl   String?
+  strokes   Json                        // 双向画笔：分层 [{ userId, color, points }]
+  updatedAt DateTime @updatedAt
+
+  @@map("doodles")
+}
+
+model Gift {
+  id          String   @id @default(cuid())
+  coupleId    String
+  name        String
+  imageUrl    String?                   // 支持自定义图片
+  price       Int      @default(0)      // 定价（虚拟币）
+  description String?
+  cardStyle   Json?                     // 卡片展示样式
+  isCustom    Boolean  @default(false)
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  couple Couple      @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  orders GiftOrder[]
+
+  @@map("gifts")
+}
+
+model GiftOrder {
+  id        String   @id @default(cuid())
+  giftId    String
+  coupleId  String
+  messageId String?
+  fromId    String
+  toId      String
+  paidAmount Int
+  note      String?
+  createdAt DateTime @default(now())
+
+  gift Gift @relation(fields: [giftId], references: [id], onDelete: Cascade)
+
+  @@map("gift_orders")
+}
+
+// ──────────────────────────── 朋友圈 ────────────────────────────
+
+model Moment {
+  id        String   @id @default(cuid())
+  coupleId  String
+  authorId  String
+  text      String?
+  musicUrl  String?                     // 分享音乐
+  musicTitle String?
+  location  String?
+  createdAt DateTime @default(now())
+  deletedAt DateTime?
+
+  couple   Couple          @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  author   User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  media    MomentMedia[]
+  likes    MomentLike[]
+  comments MomentComment[]
+
+  @@index([coupleId, createdAt])
+  @@map("moments")
+}
+
+model MomentMedia {
+  id       String @id @default(cuid())
+  momentId String
+  url      String
+  kind     String @default("IMAGE")     // IMAGE | VIDEO
+  sort     Int    @default(0)
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@map("moment_media")
+}
+
+model MomentLike {
+  id       String   @id @default(cuid())
+  momentId String
+  userId   String
+  createdAt DateTime @default(now())
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@unique([momentId, userId])
+  @@map("moment_likes")
+}
+
+model MomentComment {
+  id        String   @id @default(cuid())
+  momentId  String
+  userId    String
+  parentId  String?                      // 回复某条评论
+  text      String
+  createdAt DateTime @default(now())
+
+  moment Moment @relation(fields: [momentId], references: [id], onDelete: Cascade)
+
+  @@map("moment_comments")
+}
+
+// ──────────────────────────── 信箱 ────────────────────────────
+
+model Letter {
+  id        String       @id @default(cuid())
+  coupleId  String
+  fromId    String
+  toId      String
+  title     String?
+  body      String                       // 正文（支持 Markdown）
+  paperKey  String       @default("blue")// 信纸样式
+  status    LetterStatus @default(DRAFT)
+  replyToId String?
+  sentAt    DateTime?
+  readAt    DateTime?
+  createdAt DateTime     @default(now())
+
+  couple      Couple            @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  from        User              @relation("LetterFrom", fields: [fromId], references: [id])
+  to          User              @relation("LetterTo",   fields: [toId],   references: [id])
+  annotations LetterAnnotation[]
+
+  @@index([coupleId, createdAt])
+  @@map("letters")
+}
+
+// 蓝色手写体「批注」：可锚定到段落/字符区间
+model LetterAnnotation {
+  id       String   @id @default(cuid())
+  letterId String
+  authorId String
+  anchor   Json                          // { start, end, paragraph }
+  text     String
+  color    String   @default("#4A90D9")
+  createdAt DateTime @default(now())
+
+  letter Letter @relation(fields: [letterId], references: [id], onDelete: Cascade)
+
+  @@map("letter_annotations")
+}
+
+// ──────────────────────── 功能：音乐 / 陪伴 / 日记 ────────────────────────
+
+model MusicSession {
+  id         String   @id @default(cuid())
+  coupleId   String
+  startedBy  String
+  songUrl    String?
+  songTitle  String?
+  artist     String?
+  lyrics     String?                     // 推歌词
+  lyricLine  Int        @default(0)
+  playing    Boolean    @default(true)
+  progressMs Int        @default(0)
+  startedAt  DateTime   @default(now())
+  endedAt    DateTime?
+  durationSec Int?
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@map("music_sessions")
+}
+
+model CompanionSession {
+  id        String         @id @default(cuid())
+  coupleId  String
+  scene     CompanionScene @default(STUDY)
+  initiatorId String
+  backgroundUrl String?                   // 自定义图片/视频背景
+  backgroundKind String   @default("IMAGE")
+  status    ApprovalStatus @default(PENDING)
+  startedAt DateTime       @default(now())
+  endedAt   DateTime?
+  durationSec Int?
+  pomodoroMin Int?
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@map("companion_sessions")
+}
+
+/// 日记：同一天可以写很多条（我的不限条数；他自动写的那条每天最多一条由引擎控制）
+model DiaryEntry {
+  id        String    @id @default(cuid())
+  coupleId  String
+  authorId  String
+  mood      String    // 心情： 😊 🥰 😌 🤔 😐 😪 😔 🌙
+  text      String
+  date      DateTime  // 归属日期（本地时区的「那一天」，凌晨补写的算前一天）
+  createdAt DateTime  @default(now())
+  editedAt  DateTime? // 自己改过这条的时间（他的留言不会被改）
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, authorId, date])
+  @@map("diary_entries")
+}
+
+// 世界感知：一条采样 —— 时差与「他那边的钟点」是算出来的，「在忙 / 在发呆」是抽出来的
+model WorldSenseLog {
+  id        String   @id @default(cuid())
+  coupleId  String
+  timeOffsetMin Int                       // 时差（分钟；正 = 他比我快）—— 这是**设定**，不是测量
+  hisClock  String                        // 他那边的本地钟点 HH:mm（按上面的时差真换算）
+  bucket    String                        // 时段：凌晨 / 早上 / 上午 / 中午 / 下午 / 傍晚 / 晚上 / 深夜
+  status    String?                       // 在忙 / 刚起床 / 在发呆 …（抽签；没抽到就是空）
+  doing     String?                       // 正在做的事（抽签；没抽到就是空）
+  weather   String?                       // 天气：**没接天气源就一直为 null**（不编）
+  sampledAt DateTime @default(now())
+
+  @@index([coupleId, sampledAt])
+  @@map("world_sense_logs")
+}
+
+// ─────────────────── 观影室 / 阅读室 / 查岗 / 收藏 ───────────────────
+
+model WatchRoom {
+  id         String   @id @default(cuid())
+  coupleId   String
+  kind       RoomKind @default(WATCH)
+  sourceUrl  String                        // 导入链接
+  title      String?
+  controllerId String                      // 控进度的一方
+  progressMs Int      @default(0)          // 只有服务端控得的片源才写（B 站 / 只有片名不写）
+  playing    Boolean  @default(true)
+  status     ApprovalStatus @default(PENDING)
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+  chatEnabled Boolean @default(true)
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  items   WatchRoomItem[]
+  danmaku WatchDanmaku[]
+
+  @@map("watch_rooms")
+}
+
+/// 片单里的一部片（本机文件只在本机：`localKey` 指向设备上的 Blob，库里不存视频本体）
+model WatchRoomItem {
+  id          String          @id @default(cuid())
+  roomId      String
+  title       String
+  sourceKind  WatchSourceKind
+  sourceUrl   String?         // URL / B 站
+  bvid        String?         // B 站 BV 号
+  localKey    String?         // 本机文件在设备 IndexedDB 里的键 `video:<id>`
+  cover       String?         // emoji 封面
+  durationMs  Int?            // 片长（`<video>` 测出来后回填）
+  positionMs  Int             @default(0) // 看到第几秒（只有服务端控得的片源才写）
+  playedSec   Int             @default(0) // **真的播出来的秒数**（B 站 / 只有片名恒为 0）
+  addedById   String
+  finishedAt  DateTime?
+  createdAt   DateTime        @default(now())
+
+  room WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("watch_room_items")
+}
+
+/// 他发的弹幕：`atSec` 是片子里的第几秒（**排程时就定好并落库**，界面只按真实进度让它飘出来）
+/// 片长拿不到的片源（B 站 / 只有片名）不生成任何弹幕 —— 不在假进度上飘字。
+model WatchDanmaku {
+  id        String   @id @default(cuid())
+  roomId    String
+  itemId    String
+  atSec     Int
+  text      String
+  createdAt DateTime @default(now())
+
+  room WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, itemId, atSec])
+  @@map("watch_danmaku")
+}
+
+model ReadRoom {
+  id         String   @id @default(cuid())
+  coupleId   String
+  kind       RoomKind @default(READ)
+  bookTitle  String?
+  controllerId String?                     // 控段落进度的一方
+  paragraph  Int      @default(0)          // 读到第几段（只有有正文的书才写）
+  totalParagraph Int?                      // 总段数（「只有书名」的书为 null）
+  readSec    Int      @default(0)          // **真的读出来的秒数**（「只有书名」的书恒为 0）
+  status     ApprovalStatus @default(PENDING)
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+  chatEnabled Boolean @default(true)
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  items  ReadRoomItem[]
+  marks  ReadAnnotation[]
+
+  @@map("read_rooms")
+}
+
+/// 书单里的一本（正文本体只在本机：`localKey` 指向设备上的段落数组，库里不存正文）
+model ReadRoomItem {
+  id          String          @id @default(cuid())
+  roomId      String
+  title       String
+  author      String?
+  cover       String?         // emoji 封面
+  sourceKind  ReadSourceKind
+  localKey    String?         // 本机正文在设备 IndexedDB 里的键 `book:<id>`
+  note        String?         // 他推这本书时留的一句话
+  paraCount   Int?            // 解析出来的段数（「只有书名」为 null）
+  charCount   Int?            // 字数（估算，界面上也写明）
+  paragraph   Int             @default(0) // 读到第几段（**真段号**）
+  readSec     Int             @default(0) // **真的读出来的秒数**（「只有书名」恒为 0）
+  addedById   String
+  finishedAt  DateTime?
+  createdAt   DateTime        @default(now())
+
+  room ReadRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("read_room_items")
+}
+
+/// 他写在页边的批注 / 短句：`paraIndex` 是书里的第几段
+/// （**排程时就定好并落库**，界面只在**真的读到那一段**时才显示）
+/// 「只有书名」的书没有段落，不生成任何批注 —— 不在假进度上写字。
+model ReadAnnotation {
+  id        String   @id @default(cuid())
+  roomId    String
+  bookId    String
+  authorId  String
+  kind      String   @default("MARK")      // MARK（手写批注）| LINE（轻一点的短句）
+  paraIndex Int
+  text      String
+  createdAt DateTime @default(now())
+
+  room ReadRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, bookId, paraIndex])
+  @@map("read_annotations")
+}
+
+/// 查岗：REQUESTED → AGREED / REFUSED（EXPIRED 只在多端版出现，本机版他几秒内就回）
+model CheckRequest {
+  id         String      @id @default(cuid())
+  coupleId   String
+  requesterId String
+  targetId   String
+  type       String      @default("PHONE") // PHONE | LOCATION
+  status     CheckStatus @default(REQUESTED)
+  /// 报告：{ facts: 真的（从本机记录现算）, faked: 抽的（定位与手机屏）, polished, line }
+  /// 真的截图与坐标**不落库也不伪造** —— 拿不到就不给
+  result     Json?
+  /// 他大约什么时候回应（发起时抽好、存下来，到点才结算 —— 不存定时任务表）
+  respondAt  DateTime?
+  requestedAt DateTime   @default(now())
+  respondedAt DateTime?
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, requestedAt])
+  @@map("check_requests")
+}
+
+/// 联网搜索推送：**一次尝试一条（成功和失败都记）**
+/// 立这张表的用意就是「搜不到也要留痕」—— 界面上要能回答「上次为什么没推」。
+/// 结果字段只在成功时有；失败时 `error` / `detail` 说清原因。
+/// 红线：**搜不到就一条消息都不发**（`messageId` 为 null），绝不往里塞一条编的结果。
+/// 卡有链接 / 图片 / 视频三种形态（`media`）；`coverUrl` 那张图**必须是服务端真取过的**
+/// —— 上游返回的图一半是 logo / 防盗链 / 404，验不过就不写（退回纯链接卡），绝不放占位图。
+model SearchPush {
+  id         String   @id @default(cuid())
+  coupleId   String
+  topic      String                            // 这一槽搜的词（种子 = 日期 + 间隔槽 抽出来的）
+  slot       Int                               // 间隔槽编号（一个槽里最多试一次）
+  ok         Boolean
+  title      String?                           // ↓ 这四个都是**搜索服务真返回的**
+  url        String?
+  siteName   String?
+  summary    String?
+  media      String?                           // 卡片的形态：link | image | video（图/视频也全是上游真返回的）
+  coverUrl   String?                           // 封面 / 图片卡那张图（**服务端真取过一遍**才写；没有就是 null）
+  coverNote  String?                           // 这次形态的说明（「视频页 00:38（域名是视频站）」「纯链接（图都没验过：防盗链）」）
+  error      String?                           // NOT_CONFIGURED | BAD_KEY | FETCH_FAILED | TIMEOUT | QUOTA | BAD_RESPONSE | NO_RESULT | HTTP_ERROR
+  detail     String?                           // 上游原话 / HTTP 状态
+  messageId  String?                           // 成功那次推出去的那条消息（失败为 null）
+  manual     Boolean  @default(false)          // true = 从「设置 → 接入」手动推的（不走排程）
+  createdAt  DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, createdAt])
+  @@map("search_pushes")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  coupleId  String
+  ownerId   String                          // 双方独立收藏
+  category  String   @default("SAID")       // SAID 说过的话 | LETTER 信件 | MOMENT 朋友圈
+  refId     String
+  snapshot  Json?
+  reason    String   @default("他说的这句话我想一直留着")  // 默认收藏原因
+  createdAt DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, category, refId])
+  @@map("favorites")
+}
+
+// ─────────────────────────── 分析 / 统计 ───────────────────────────
+
+model WordStat {
+  id        String   @id @default(cuid())
+  coupleId  String
+  userId    String
+  word      String
+  count     Int      @default(1)
+  updatedAt DateTime @updatedAt
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, userId, word])
+  @@map("word_stats")
+}
+
+// 适应度：梦角对各功能与字卡的熟练度
+model FitnessScore {
+  id        String   @id @default(cuid())
+  coupleId  String
+  featureKey String                          // MUSIC | GIFT | COMPANION | CARD_TEXT ...
+  score     Float    @default(0)             // 0~100
+  useCount  Int      @default(0)
+  suggestion String?                         // 推荐所需字卡
+  updatedAt DateTime @updatedAt
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, featureKey])
+  @@map("fitness_scores")
+}
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  coupleId  String
+  actorId   String?
+  event     String                            // MESSAGE_SENT | CARD_USED | GIFT_SENT ...
+  cardId    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  card   Card?   @relation(fields: [cardId], references: [id])
+
+  @@index([coupleId, event, createdAt])
+  @@map("usage_events")
+}
+
+// ────────────────────── 引擎：规则 / 集成 / 主动任务 ──────────────────────
+
+model RuleConfig {
+  id        String   @id @default(cuid())
+  coupleId  String
+  version   Int      @default(1)
+  data      Json                              // 见 docs/rule-engine.md，zod 校验
+  isActive  Boolean  @default(true)
+  updatedBy String?
+  createdAt DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, version])
+  @@map("rule_configs")
+}
+
+model IntegrationConfig {
+  id        String   @id @default(cuid())
+  coupleId  String
+  provider  String                             // MINIMAX | SEARCH | LLM | STORAGE
+  enabled   Boolean  @default(false)
+  secret    String?                            // AES-256 加密后的 Key
+  options   Json?
+  updatedAt DateTime @updatedAt
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, provider])
+  @@map("integration_configs")
+}
+
+model ProactiveJob {
+  id        String   @id @default(cuid())
+  coupleId  String
+  kind      String                             // MESSAGE | MOMENT | LETTER | CALL
+  runAt     DateTime
+  status    String   @default("SCHEDULED")     // SCHEDULED | SENT | CANCELLED
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+
+  @@index([coupleId, status, runAt])
+  @@map("proactive_jobs")
+}

@@ -1,0 +1,120 @@
+import type { Conversation, Message } from '@/types'
+
+const iso = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString()
+
+export const MOCK_CONVERSATION: Conversation = {
+  id: 'c_1',
+  coupleId: 'cp_1',
+  me: { id: 'u_me', nickname: '我', avatarUrl: '', isDream: false },
+  peer: { id: 'u_dream', nickname: '梦角', avatarUrl: '', isDream: true },
+  unread: 0,
+}
+
+export const MOCK_MESSAGES: Message[] = [
+  {
+    id: 'm_1',
+    conversationId: 'c_1',
+    senderId: 'u_dream',
+    kind: 'TEXT',
+    status: 'READ',
+    text: '今天下雨了，你有没有带伞呀？',
+    emotionTags: ['关心', '想交流'],
+    latencyMs: 8400,
+    createdAt: iso(42),
+  },
+  {
+    id: 'm_2',
+    conversationId: 'c_1',
+    senderId: 'u_me',
+    kind: 'TEXT',
+    status: 'READ',
+    text: '带了！你怎么知道下雨的',
+    createdAt: iso(40),
+  },
+  {
+    id: 'm_3',
+    conversationId: 'c_1',
+    senderId: 'u_dream',
+    kind: 'CARD',
+    status: 'READ',
+    text: '(๑•̀ㅂ•́)و✧',
+    payload: { cardType: 'KAOMOJI', cardId: 'card_kao_12' },
+    emotionTags: ['开心'],
+    latencyMs: 5200,
+    createdAt: iso(39),
+  },
+  {
+    id: 'm_4',
+    conversationId: 'c_1',
+    senderId: 'u_dream',
+    kind: 'SEARCH_PUSH',
+    status: 'READ',
+    text: '看到一条你可能会喜欢的：今晚有英仙座流星雨',
+    payload: {
+      title: '今晚有英仙座流星雨，最佳观测时间 23:00',
+      url: 'https://example.com/news/meteor',
+      source: '联网搜索',
+    },
+    proactive: true, // 主动推送 → 气泡左上角小爱心
+    createdAt: iso(30),
+  },
+  {
+    id: 'm_5',
+    conversationId: 'c_1',
+    senderId: 'u_me',
+    kind: 'TEXT',
+    status: 'READ',
+    text: '那我们一起看吧！',
+    createdAt: iso(28),
+  },
+  {
+    id: 'm_6',
+    conversationId: 'c_1',
+    senderId: 'u_dream',
+    kind: 'VOICE',
+    status: 'READ',
+    text: '[语音]',
+    isVoice: true,
+    audioUrl: '/mock/voice-1.mp3',
+    audioDurationMs: 4200,
+    payload: { via: 'MiniMax', voiceId: 'male-qn-qingse' },
+    quoteOf: { id: 'm_5', text: '那我们一起看吧！', senderId: 'u_me' },
+    latencyMs: 11_000,
+    createdAt: iso(26),
+  },
+  {
+    id: 'm_7',
+    conversationId: 'c_1',
+    senderId: 'u_me',
+    kind: 'RED_PACKET',
+    status: 'READ',
+    text: '看流星雨基金',
+    payload: { amount: '13.14', blessing: '一起许愿呀', isRandom: false },
+    createdAt: iso(20),
+  },
+  {
+    id: 'm_8',
+    conversationId: 'c_1',
+    senderId: 'u_dream',
+    kind: 'TEXT',
+    status: 'READ',
+    text: '收了你的红包，我可就不能跑了哦',
+    proactive: true,
+    emotionTags: ['撒娇', '开心'],
+    latencyMs: 3200,
+    createdAt: iso(3),
+  },
+]
+
+/** 「+」扩展面板入口（拍一拍放在最前面，和微信一样常用） */
+export const EXTEND_ACTIONS = [
+  { key: 'PAT', label: '拍一拍', icon: '🫳' },
+  { key: 'CALL', label: '语音通话', icon: '📞' },
+  { key: 'IMAGE', label: '图片', icon: '🖼️' },
+  { key: 'CHOICE', label: '抉择', icon: '🤔' },
+  { key: 'QUESTION', label: '问卷', icon: '📋' },
+  { key: 'RED_PACKET', label: '红包', icon: '🧧' },
+  { key: 'MUSIC', label: '音乐邀请', icon: '🎵' },
+  { key: 'GIFT', label: '礼物柜', icon: '🎁' },
+  { key: 'DOODLE', label: '涂鸦', icon: '🖌️' },
+] as const

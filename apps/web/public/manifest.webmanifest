@@ -1,0 +1,18 @@
+{
+  "name": "黎念 · 字卡传讯",
+  "short_name": "黎念",
+  "description": "和梦角聊天的一台小手机：字卡传讯 / 朋友圈 / 信箱 / 陪伴 / 联网搜索推送",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eaf4ff",
+  "theme_color": "#6aa8f0",
+  "categories": ["lifestyle", "social"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

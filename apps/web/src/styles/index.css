@@ -1,0 +1,293 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── 主题变量：主界面「可更改配色」改这里即可全站生效 ── */
+:root {
+  color-scheme: light; /* 防止系统深色模式把原生滑块/输入框渲染成深色 */
+  --ln-page: 234 244 255;      /* 页面底色：浅蓝 */
+  --ln-surface: 255 255 255;   /* 卡片 / 列表白 */
+  --ln-brand: 106 168 240;     /* 主色 */
+  --ln-brand-soft: 200 224 250;
+  --ln-brand-deep: 58 122 200;
+  --ln-bubble-me: 168 212 255; /* 自己的气泡 */
+  --ln-bubble-peer: 255 255 255; /* 对方的气泡 */
+  --ln-bubble-ink: 26 36 48; /* 气泡文字 */
+  --ln-bubble-radius: 0.5rem; /* 气泡圆角 */
+  --ln-ink: 26 36 48;
+  --ln-ink-sub: 110 128 148;
+  --ln-ink-faint: 168 182 198;
+  --ln-hairline: 231 238 246;
+}
+
+/* 深夜蓝主题下，原生控件跟随深色 */
+:root[data-theme='night'] {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 20% -10%, #dcecff 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 110%, #e8f3ff 0%, transparent 55%), #f4f9ff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 原生 range 滑块：自绘轨道 + 填充 + 滑块，跨浏览器与主题一致 ──
+   用法：style={{ '--ln-slider': '#xxx', '--ln-fill': '35%' }} */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--ln-slider, rgb(var(--ln-brand))) 0,
+    var(--ln-slider, rgb(var(--ln-brand))) var(--ln-fill, 0%),
+    rgb(var(--ln-hairline)) var(--ln-fill, 0%),
+    rgb(var(--ln-hairline)) 100%
+  );
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -5px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid var(--ln-slider, rgb(var(--ln-brand)));
+  box-shadow: 0 1px 3px rgba(20, 40, 70, 0.22);
+}
+/* Firefox */
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(var(--ln-hairline));
+}
+input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ln-slider, rgb(var(--ln-brand)));
+}
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--ln-slider, rgb(var(--ln-brand)));
+  border-radius: 999px;
+  background: #fff;
+}
+input[type='range']:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+input[type='range']:disabled::-webkit-slider-thumb {
+  border-color: rgb(var(--ln-ink-faint));
+}
+input[type='range']:disabled::-moz-range-thumb {
+  border-color: rgb(var(--ln-ink-faint));
+}
+
+/* ── 气泡尾巴开关（美化 → 气泡样式） ── */
+[data-tail='off'] .ln-bubble-tail::before,
+[data-tail='off'] .ln-bubble-tail::after {
+  display: none;
+}
+
+/* ── 语音气泡：播放时那三根小柱子的跳动（`VoiceBubble` 用内联 animation 引用） ── */
+@keyframes voice-wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* ── 观影室的弹幕：从右往左飘（`WatchRoomScreen` 用 `.danmaku` + 内联 animationDuration） ── */
+@keyframes ln-danmaku {
+  from {
+    transform: translateX(105%);
+  }
+  to {
+    transform: translateX(-105%);
+  }
+}
+.danmaku {
+  left: 0;
+  animation-name: ln-danmaku;
+  animation-timing-function: linear;
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+  will-change: transform;
+}
+
+/* 隐藏滚动条（手机内滚动区） */
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .tap {
+    @apply active:opacity-60 transition-opacity duration-100 select-none;
+  }
+}
+
+/* 桌面上：把手机摆在屏幕中间。
+   用 flex + `margin: auto` 而不是 `place-items-center` —— 后者在「手机比窗口高」时会把顶部裁到窗口外面，
+   而 auto 边距在放不下时会自动收成 0，于是变成从顶部开始、整页可滚动。 */
+.phone-stage {
+  display: flex;
+  min-height: 100%;
+  padding: 1.5rem;
+}
+.phone-frame {
+  margin: auto;
+}
+
+/* ══ 手机适配 ══════════════════════════════════════════════════════════════
+   桌面上：屏幕中间摆一台 390×844 的小手机（刘海 / 假状态栏 / Home Indicator）。
+   手机上：把外壳「拆掉」—— 铺满整屏，圆角、阴影、刘海、假状态栏全去掉，
+          安全区让给真机，看起来就是一个装在手机上的 App。
+   怎么判定：窄屏（≤520px；荣耀 200 Pro 的逻辑宽是 408px = 1224 / 3）或者
+          已经被装成独立应用（`display-mode: standalone`，加桌面图标后就是它）。
+   顶/底安全区不是靠外壳垫白边，而是「哪一块有底色就让哪一块自己长高」，
+   这样刘海下面、手势条上面都不会出现一条和页面颜色不一样的接缝。
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* 触屏手感：点一下别闪蓝框、别跟着手指橡皮筋、文字不被系统放大 */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overscroll-behavior: none;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+@media (max-width: 520px), (display-mode: standalone) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  body {
+    background: rgb(var(--ln-surface));
+  }
+
+  /* 外壳 → 全屏（这三个 class 是外壳的钩子，见 `components/phone/PhoneShell.tsx`） */
+  .phone-stage {
+    display: block;
+    height: 100dvh;
+    min-height: 0;
+    padding: 0;
+  }
+  .phone-frame {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+  }
+  .phone-body {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .phone-screen {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 真机自己有刘海 / 状态栏 / 手势条 —— 假的这三个不画 */
+  .phone-notch,
+  .phone-home,
+  .ln-statusbar {
+    display: none;
+  }
+
+  /* 每条标题栏自己把顶部安全区填满（用自己那块底色，刘海下面看不出接缝） */
+  .ln-navbar {
+    height: calc(3.5rem + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* 滚到底的内容别被手势条挡住（取「原来的留白」和「安全区」里更大的那个） */
+  .overflow-y-auto {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  }
+  /* 从底部升起的那些面板（长按菜单 / 各种表单 / 卡片编辑…）根节点统一是
+     `absolute inset-0 … justify-end`，这里一并垫上安全区 —— 改这一条胜过改十个组件 */
+  .inset-0.justify-end {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* 全屏通话页：上下都要让开（它是唯一 `inset-0 … justify-between` 的整屏层） */
+  .inset-0.justify-between {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* ── 主界面两个人中间那条波（纯 CSS/SVG，不依赖 JS 动画） ── */
+@keyframes ln-wave-move {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-40px);
+  }
+}
+.ln-wave-a {
+  animation: ln-wave-move 2.8s linear infinite;
+}
+.ln-wave-b {
+  animation: ln-wave-move 4.4s linear infinite reverse;
+  opacity: 0.4;
+}
+@keyframes ln-heart {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.16);
+  }
+}
+.ln-heart {
+  animation: ln-heart 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ln-wave-a,
+  .ln-wave-b,
+  .ln-heart {
+    animation: none;
+  }
+}

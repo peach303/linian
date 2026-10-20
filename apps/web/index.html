@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      手机适配：`viewport-fit=cover` 让背景铺到刘海/挖孔下面，
+      `interactive-widget=resizes-content` 让 Android 键盘顶起来时把视口一起顶小（输入框就不会被盖住），
+      `user-scalable=no` 关掉双指缩放 —— 装到桌面后更像一个原生 App，而不是一个网页。
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <title>黎念 LiNian</title>
+    <meta name="description" content="黎念 · 字卡传讯 —— 和梦角聊天的一台小手机" />
+    <!-- 浏览器/系统状态栏的颜色；跟着 App 主题走，由 App 里那段 effect 实时改 -->
+    <meta name="theme-color" content="#eaf4ff" />
+
+    <!-- 装到手机桌面：独立窗口、全屏、有图标（图标是 `scripts/make-icons.mjs` 现画的） -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="黎念" />
+    <!-- iOS 用「default」：状态栏文字是深色，刚好压在我们最上面那条浅色标题栏上 -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!--
+      手写体「马善政」已经本地化：92 片 unicode-range 子集在 public/fonts/mashanzheng/，
+      样式表是 src/styles/hand-font.css（脚本 apps/web/scripts/fetch-hand-font.mjs 生成）。
+      原来是 Google Fonts 的外链，国内手机上经常加载不出来 —— 现在断网也能显示。
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
