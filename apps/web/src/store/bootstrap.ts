@@ -5,6 +5,7 @@
  *   2) 渲染完成后后台拉远端：新数据覆盖本地、旧数据排队补发
  */
 import { applyTheme } from '@/lib/theme'
+import { STATIC_ONLY } from '@/lib/deploy'
 import { attachProactiveScheduler, attachReplyEngine } from '@/lib/engine/runtime'
 import { finalizeStaleCalls } from '@/lib/engine/call'
 import { attachCompanionEngine } from '@/lib/engine/companion'
@@ -54,7 +55,7 @@ export async function bootstrap() {
   // 注意：预设卡不在这里落库 —— 要等远端确认「真的没有卡库」，否则新设备会覆盖旧卡库（见 seedIfEmpty）
   if (msgs.length > 0) useChatStore.getState().hydrate(msgs)
 
-  startSyncLoop()
+  if (!STATIC_ONLY) startSyncLoop()
   /* 挂上拟真引擎：之后「我发的每条消息」都会触发一轮抽签出稿（本地，离线可用） */
   attachReplyEngine()
   /* 挂上主动调度：安静一会儿之后他自己来找你（气泡左上角 ❤️） */
@@ -78,17 +79,22 @@ export async function bootstrap() {
   /* 上次关机时正在进行的通话 → 直接按「已挂断」落定，别卡在「正在通话」 */
   finalizeStaleCalls()
 
-  /* 接入状态（MiniMax 语音能不能真的出声）：读到了才会把 INTEGRATIONS.tts 打开，
-     读不到就一律「未接通」——引擎宁可只写轨迹，也不发假语音。
-     放在渲染前（就是一次本机请求），免得第一条回复抽签时开关还没就位。 */
-  await useIntegrationsStore.getState().refresh()
+  if (STATIC_ONLY) {
+    /* 纯静态站：没有后端，语音 / 搜索 / 跨设备同步都不假装能用 */
+    useIntegrationsStore.setState({ loaded: true, reachable: false, note: '静态托管模式：没有后端，语音 / 搜索 / 同步不可用' })
+  } else {
+    /* 接入状态（MiniMax 语音能不能真的出声）：读到了才会把 INTEGRATIONS.tts 打开，
+       读不到就一律「未接通」——引擎宁可只写轨迹，也不发假语音。
+       放在渲染前（就是一次本机请求），免得第一条回复抽签时开关还没就位。 */
+    await useIntegrationsStore.getState().refresh()
 
-  /* 挂上联网搜索推送：真去博查搜，**搜到才推**，搜不到只记一条轨迹。
-     放在接入状态读回来之后挂 —— 那一步才知道 Key 配没配、一次取几条。 */
-  attachSearchEngine()
+    /* 挂上联网搜索推送：真去博查搜，**搜到才推**，搜不到只记一条轨迹。
+       放在接入状态读回来之后挂 —— 那一步才知道 Key 配没配、一次取几条。 */
+    attachSearchEngine()
 
-  /* ── ② 远端（后台，不阻塞渲染） ── */
-  void syncFromRemote()
+    /* ── ② 远端（后台，不阻塞渲染） ── */
+    void syncFromRemote()
+  }
 }
 
 async function syncFromRemote() {

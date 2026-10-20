@@ -203,20 +203,23 @@
   栈变深 push，应用内返回 `history.go(-n)` 对齐，系统返回（popstate）直接把 store 摆回那条记录。
   于是在手机上按返回是退一屏，退到主界面再按才退出 —— 同时 hash 跟着屏幕走，刷新不丢位置。
 
-### 5.1 部署形态：为什么「只传 GitHub」语音和推送就用不了
+### 5.1 部署形态：完整版与纯静态版
 
 前端所有请求都是**同源**的相对路径（`/api/v1/…`：`api/client.ts`、`lib/repo.ts`、`lib/voice.ts`、`lib/search.ts`、`lib/music.ts`）。
+纯静态构建用 `VITE_STATIC_ONLY=true`（`npm run build:web:static`）把 `/api` 这条路主动关掉：
+`lib/deploy.ts` 的 `STATIC_ONLY` 会让 bootstrap 不挂搜索、不同步、不读接入状态，`repo.ts` 的 push/flush 直接只留本地。
 
 | 形态 | 语音 / 搜索推送 | 说明 |
 | --- | --- | --- |
-| 纯静态托管（GitHub Pages 等） | ❌ | 页面能开，但没有进程能拿 Key 去调 MiniMax / 博查；`/api` 全部 404 → `BACKEND_UNREACHABLE` |
+| 纯静态托管（GitHub Pages 等） | ❌ | 页面和本地引擎能开；没有进程能拿 Key 去调 MiniMax / 博查。静态构建不请求 `/api`，不会显示成「后端坏了」 |
 | `npm start` 单进程（dist + API 同端口） | ✅ | `dev-server.mjs` 里的 `serveStatic`：dist 存在就托管，非 `/api/` 的 GET 走静态，找不到回落 `index.html` |
 | 静态 + 反代 `/api` | ✅ | 前端域名下要有 `/api`；跨域则后端设 `WEB_ORIGIN`（CORS 白名单） |
 
 `serveStatic` 的两个细节：`index.html` 发 `no-cache`（发版立刻生效），带 hash 的 `assets/` 与字体发一年 `immutable`；
 路径先 `resolve` 再校验前缀，挡 `../` 穿越。
 
-仓库里的两个配方：`render.yaml`（Blueprint：`npm install && npm run build:web` → `npm start`，免费实例无持久盘）
+仓库里的三个配方：`render.yaml`（Blueprint：`npm install && npm run build:web` → `npm start`，免费实例无持久盘）、
+`.github/workflows/deploy-pages.yml`（GitHub Pages 静态版；`VITE_STATIC_ONLY=true` + `VITE_BASE_PATH=/linian/`）
 与 `Dockerfile`（多阶段；运行阶段只拷 `apps/server/*.mjs` + `dist` —— 后端零依赖，镜像里没有 `node_modules`）。
 `.dockerignore` 挡住 `.data` / `.env`，Key 不会被打进镜像。
 

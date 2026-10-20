@@ -14,6 +14,7 @@
     "dev:server": "npm run dev -w @linian/server",
     "build": "npm run build -w @linian/shared && npm run build -w @linian/web && npm run build -w @linian/server",
     "build:web": "npm run build -w @linian/web",
+    "build:web:static": "node scripts/build-static.mjs",
     "icons": "node apps/web/scripts/make-icons.mjs",
     "font": "node apps/web/scripts/fetch-hand-font.mjs",
     "pack:public": "node scripts/make-public-copy.mjs"

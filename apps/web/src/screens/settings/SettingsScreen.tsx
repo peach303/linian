@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
 import { PromptSheet } from '@/components/common/PromptSheet'
+import { STATIC_ONLY } from '@/lib/deploy'
 import { pickImage } from '@/lib/file'
 import { THEME_PRESETS } from '@/lib/theme'
 import { useAppStore } from '@/store/useAppStore'
@@ -111,16 +112,18 @@ export function SettingsScreen() {
           <Row
             label="MiniMax 语音"
             value={
-              integrations.minimax.configured
-                ? `已接通 · ${integrations.minimax.hint}`
-                : '未配置 · 接通后他能真的出声'
+              STATIC_ONLY
+                ? '静态版不可用'
+                : integrations.minimax.configured
+                  ? `已接通 · ${integrations.minimax.hint}`
+                  : '未配置 · 接通后他能真的出声'
             }
             onClick={() => push('integration')}
             chevron
           />
           <Row
             label="联网搜索推送"
-            value={searchOn ? '已开启 · 搜到才推' : '已关闭'}
+            value={STATIC_ONLY ? '静态版不可用' : searchOn ? '已开启 · 搜到才推' : '已关闭'}
             onClick={() => push('integration')}
             chevron
           />
@@ -129,7 +132,9 @@ export function SettingsScreen() {
         {/* ── 数据 ── */}
         <Group title="数据">
           <Row label="聊天记录" value={`${messageCount} 条 · 本机保存`} />
-          <Row label="立即同步到后端" value={syncLabel} onClick={() => void doSync()} chevron />
+          {!STATIC_ONLY && (
+            <Row label="立即同步到后端" value={syncLabel} onClick={() => void doSync()} chevron />
+          )}
           <Row label="导入 / 导出" value="全量 JSON · 换设备搬家" onClick={() => push('data')} chevron />
           <Row
             label="清空聊天记录"

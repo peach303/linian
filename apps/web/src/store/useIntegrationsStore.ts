@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { STATIC_ONLY } from '@/lib/deploy'
 import { INTEGRATIONS } from '@/lib/integrations'
 import {
   EMPTY_INTEGRATIONS,
@@ -35,6 +36,17 @@ export const useIntegrationsStore = create<IntegrationsState>((set) => ({
   note: '',
 
   refresh: async () => {
+    if (STATIC_ONLY) {
+      INTEGRATIONS.tts = false
+      INTEGRATIONS.search = false
+      set({
+        status: EMPTY_INTEGRATIONS,
+        reachable: false,
+        loaded: true,
+        note: '静态托管模式：没有后端，语音 / 搜索 / 同步不可用',
+      })
+      return
+    }
     const s = await readIntegrations()
     // 后端不通时保留上一份状态，只把「够不够得着」标出来
     const status = s ?? EMPTY_INTEGRATIONS
@@ -46,6 +58,14 @@ export const useIntegrationsStore = create<IntegrationsState>((set) => ({
   },
 
   save: async (patch) => {
+    if (STATIC_ONLY) {
+      set({
+        saving: false,
+        reachable: false,
+        note: '静态托管模式不能配置后端接口；Key 也不会写进网页',
+      })
+      return false
+    }
     set({ saving: true, note: '' })
     const next = await saveIntegrations(patch)
     if (!next) {

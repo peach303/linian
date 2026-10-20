@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
+import { STATIC_ONLY } from '@/lib/deploy'
 import { pushNow } from '@/lib/engine/search'
 import { searchReason, searchWeb, type SearchResult } from '@/lib/search'
 import { fromNow } from '@/lib/time'
@@ -199,6 +200,17 @@ export function IntegrationScreen() {
       />
 
       <div className="no-scrollbar flex-1 space-y-3 overflow-y-auto px-3 py-3">
+        {STATIC_ONLY && (
+          <section className="rounded-xl border border-brand/30 bg-brand/5 p-3">
+            <p className="text-[13px] font-medium text-ink">静态托管版</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-ink-sub">
+              聊天、字卡、日记、朋友圈、信箱、功能都在本机跑，不依赖后端。语音合成、联网搜索推送、跨设备同步需要服务端，这个版本不会假装能用；Key 也不会写进网页。
+            </p>
+          </section>
+        )}
+
+        {!STATIC_ONLY && (
+          <>
         {/* ── 状态 ── */}
         <section className="rounded-xl bg-surface p-3 shadow-card">
           <div className="flex items-center gap-2">
@@ -631,6 +643,8 @@ export function IntegrationScreen() {
         <p className="pb-4 text-center text-[11px] text-ink-faint">
           「测试发音」的每一句都会缓存，同一句话不会重复计费；搜索不缓存，每次都真去搜。
         </p>
+          </>
+        )}
       </div>
     </div>
   )

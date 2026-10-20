@@ -8,6 +8,7 @@
  * 与 apps/server/src/modules/*（NestJS 生产实现）。
  */
 import { db } from './db'
+import { STATIC_ONLY } from './deploy'
 import { DEFAULT_RULES, withRuleDefaults } from './rules'
 import { defaultCards } from './cards'
 import { defaultPats } from './pats'
@@ -396,6 +397,7 @@ let online = false
 export const isOnline = () => online
 
 async function request<T>(method: string, url: string, body?: unknown, timeoutMs = 1500): Promise<T> {
+  if (STATIC_ONLY) throw new Error('static-only build: no backend')
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
@@ -417,8 +419,9 @@ async function request<T>(method: string, url: string, body?: unknown, timeoutMs
   }
 }
 
-/** 推后端；失败就排队 */
+/** 推后端；失败就排队（纯静态站没有后端，直接只留在本机） */
 async function push(method: string, url: string, body?: unknown) {
+  if (STATIC_ONLY) return
   try {
     await request(method, url, body)
   } catch {
@@ -428,6 +431,7 @@ async function push(method: string, url: string, body?: unknown) {
 
 /** 把 outbox 里的操作按顺序补发 */
 export async function flush(): Promise<{ sent: number; failed: number }> {
+  if (STATIC_ONLY) return { sent: 0, failed: 0 }
   const ops = await db.listOutbox<{ method: string; url: string; body?: unknown }>()
   let sent = 0
   for (const op of ops) {
@@ -700,6 +704,7 @@ export const stats = async () => ({
 
 let timer: ReturnType<typeof setInterval> | undefined
 export function startSyncLoop(intervalMs = 20_000) {
+  if (STATIC_ONLY) return () => {}
   if (timer) return () => clearInterval(timer)
   const tick = () => void flush()
   timer = setInterval(tick, intervalMs)

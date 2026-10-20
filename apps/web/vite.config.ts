@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
 export default defineConfig({
+  /**
+   * GitHub Pages 的项目页会挂在 `/仓库名/` 下，构建时用 VITE_BASE_PATH 指定；
+   * 本机开发 / Render 根路径不用传，默认还是 `/`。
+   */
+  base: process.env.VITE_BASE_PATH || '/',
   plugins: [react()],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },

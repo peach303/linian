@@ -286,7 +286,8 @@ npx prisma studio
 
 | 你打算怎么放 | 语音（TTS） | 联网搜索推送 | 原因 |
 | --- | --- | --- | --- |
-| **GitHub Pages / 任意纯静态托管** | ❌ | ❌ | 页面能打开，但前端请求的是**同源的 `/api/v1/…`**；静态托管只有文件，没有进程能替你拿 Key 去调 MiniMax / 博查 |
+| **GitHub Pages 静态版（`npm run build:web:static`）** | ❌ | ❌ | 页面和本地引擎都能用，但静态托管只有文件，没有进程能替你拿 Key 去调 MiniMax / 博查；这个构建会主动不连 `/api` |
+| **任意静态托管 + 自己的 `/api` 反代** | ✅ | ✅ | 前端可以放静态托管，但域名下必须有 `/api` 指向一台真的在跑的后端 |
 | 自己电脑跑后端 + 手机连同一个 Wi-Fi | ✅ | ✅ | 手机访问 `http://<电脑IP>:3001/` 就行，见下 |
 | 一台云服务器 / NAS / 能跑 Node 的容器 | ✅ | ✅ | 同一个地址同时出前端和 API，最省事 |
 | 内网穿透（cloudflared / ngrok） | ✅ | ✅ | 电脑上照常跑，隧道给个公网地址；关电脑就没了 |
@@ -308,9 +309,9 @@ npm start              # 起后端；dist 存在就顺手一起托管
 
 > 换设备不怕丢卡库：全新设备第一次打开会先拉远端卡库，只有「本地和服务端都没有」时才落预设卡（以前会拿内存里的预设整包覆盖上去，把 useCount 和自定义卡清掉）。
 
-### 把 GitHub 仓库变成「能用的链接」：两条现成的路
+### 把 GitHub 仓库变成「能用的链接」：三条现成的路
 
-仓库里已经准备好两个部署配方，**不用改代码**：
+仓库里已经准备好三个部署配方，**不用改代码**：
 
 **① Render（有免费额度，最接近「传上去就有链接」）**
 
@@ -328,7 +329,22 @@ npm start              # 起后端；dist 存在就顺手一起托管
 > 新部署是空库，**旧记录不会自己跟过去**：在旧地址「设置 → 数据 → 导出备份」，到新地址导入一次即可
 >（见下面「备份 / 换设备搬家」）。
 
-**② 自己的机器 / NAS / 云服务器（Docker）**
+**② GitHub Pages（免卡、纯静态，最省事）**
+
+仓库里带了 `.github/workflows/deploy-pages.yml` 和 `npm run build:web:static`。它会构建一份**不连后端**的静态站：
+聊天、字卡、日记、朋友圈、信箱、功能、陪伴这些本地引擎照常跑；语音合成、联网搜索推送、跨设备同步不会假装能用。
+
+1. 把仓库推到 GitHub 的 `main` 分支。
+2. 打开仓库 → Settings → Pages → Build and deployment → Source 选 **GitHub Actions**。
+3. 回到 Actions 看 `Deploy static site to GitHub Pages` 跑完，地址是
+   `https://peach303.github.io/linian/`（仓库名不是 `linian` 时，把 workflow 里的 `VITE_BASE_PATH` 改成 `/你的仓库名/`）。
+4. 不用绑卡，不用开电脑，也没有服务端 `.data`。聊天记录只存在当前浏览器（IndexedDB），
+   换设备 / 清缓存前在「设置 → 数据 → 导出备份」留一份 JSON。
+
+> GitHub Pages 在国内偶尔会慢或打不开，和代码无关；能打开 GitHub 一般就能打开它。
+> 静态版没有 `APP_PASSWORD`：因为没有服务端数据可看，但页面本身是公开的。Key 不会进静态站 —— 也不该进。
+
+**③ 自己的机器 / NAS / 云服务器（Docker）**
 
 ```bash
 docker build -t linian .
@@ -339,9 +355,9 @@ docker run -d -p 3001:3001 -v linian-data:/app/apps/server/.data --name linian l
 镜像里**没有 node_modules**（后端只用 Node 内置模块），`.dockerignore` 也把 `.data` / `.env` 挡住了 ——
 Key 只存在于你挂的那个卷里。
 
-**GitHub Pages 为什么不行**：它只发静态文件，没有进程替你拿 Key 调 MiniMax / 博查，`/api` 全 404。
-页面能打开、聊天也能用（IndexedDB 本地优先），但语音和联网推送是死的 —— 这就是「有链接 ≠ 能用」的原因。
-GitHub 本身只是存代码的地方，仓库链接是代码页，不是网站。
+**静态版和完整版的区别**：静态版有链接、有本地聊天，但没有进程替你拿 Key 调 MiniMax / 博查，
+`/api` 不会假装成功；完整版（Render / Docker / 自己电脑）才有语音和联网推送。
+GitHub 本身只是存代码的地方，仓库链接是代码页，不是网站；Pages 才是把 `dist` 变成网站的那一层。
 
 ### 别人拿到链接会看到什么？（部署到公网前必看）
 
