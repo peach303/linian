@@ -114,7 +114,7 @@ export function favoriteFromTrack(
 ): Omit<FavoriteItem, 'id' | 'createdAt'> {
   return {
     owner,
-    author: owner === 'me' ? 'dream' : 'me',
+    author: track.addedBy === 'him' ? 'dream' : 'me',
     kind: 'MUSIC',
     refId: track.id,
     title: track.title,
