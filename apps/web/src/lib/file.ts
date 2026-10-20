@@ -52,7 +52,12 @@ export function pickImage(
   capture?: 'user' | 'environment',
   opts?: PickOptions,
 ) {
-  pickFile('image/png,image/jpeg,image/webp,image/*', onPick, capture, { maxBytes: DEFAULT_MAX_BYTES, ...opts })
+  // 所有走 pickImage 的地方都是静态图片模块：动图统一去「表情包」用 pickSticker
+  pickFile('image/png,image/jpeg,image/webp,image/*', onPick, capture, {
+    maxBytes: DEFAULT_MAX_BYTES,
+    ...opts,
+    staticOnly: true,
+  })
 }
 
 /** 表情包：支持 GIF / APNG / 动态 WebP，也允许普通静态图当表情用 */

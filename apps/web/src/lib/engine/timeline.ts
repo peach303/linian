@@ -729,9 +729,16 @@ function joinMyMusic(id: string) {
   const rules = useRulesStore.getState().saved
   const p = (msg.payload ?? {}) as unknown as MusicPayload
   const listenMin = Math.round(seededRange(`mu-min:${id}`, rules.music.listenMin))
-  const at = new Date().toISOString()
+  const at = new Date()
+  const atIso = at.toISOString()
 
-  chat.patchMessage(id, { payload: { ...p, joined: { at }, listenMin } })
+  // 他答应来听 → 房间真的要有「他在」：不然后面的切歌 / 暂停 / 换模式都不会发生
+  useAppStore.getState().patchRoom({
+    heJoinedAt: atIso,
+    heStaysUntil: new Date(at.getTime() + listenMin * 60_000).toISOString(),
+    ...(p.trackId ? { currentId: p.trackId } : {}),
+  })
+  chat.patchMessage(id, { payload: { ...p, joined: { at: atIso }, listenMin } })
   if (rules.music.say.enabled && seededHit(`mu-say:${id}`, rules.music.say.p)) {
     pushHisMessage({ text: makeMusicLine(p.title), quoteOf: msg })
   }

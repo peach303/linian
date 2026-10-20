@@ -174,6 +174,21 @@ export function MusicRoomScreen() {
     return () => window.clearTimeout(timer)
   }, [room.heJoinedAt, dream.id, patchRoom])
 
+  /* 他到点会先走：房间回到「还没进来」，切歌 / 暂停也随之停下 */
+  useEffect(() => {
+    if (!room.heJoinedAt || !room.heStaysUntil) return
+    const left = +new Date(room.heStaysUntil) - Date.now()
+    if (left <= 0) {
+      patchRoom({ heJoinedAt: undefined, heStaysUntil: undefined })
+      return
+    }
+    const timer = window.setTimeout(
+      () => patchRoom({ heJoinedAt: undefined, heStaysUntil: undefined }),
+      Math.min(left, 2 ** 31 - 1),
+    )
+    return () => window.clearTimeout(timer)
+  }, [room.heJoinedAt, room.heStaysUntil, patchRoom])
+
   async function selectTrack(t: Track | undefined) {
     if (!t) return
     patchRoom({ currentId: t.id, position: 0 })
