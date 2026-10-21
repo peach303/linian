@@ -119,6 +119,12 @@ input[type='range']:disabled::-moz-range-thumb {
   border: 0 !important;
   content: '' !important;
 }
+/* 一枚气泡只留一个尾巴：另一边如果没有内容，会在文字开头 / 结尾留一个小方块 */
+.ln-bubble-tail.ln-bubble-me::before,
+.ln-bubble-tail.ln-bubble-peer::after {
+  display: none !important;
+  content: none !important;
+}
 .ln-bubble-tail.ln-bubble-me::after {
   right: -5px !important;
   clip-path: polygon(0 0, 100% 50%, 0 100%);

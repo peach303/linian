@@ -138,8 +138,9 @@
 - **一起听（音乐房间）**：数据落 `state.musicRoom`（歌单 / 一起听秒数 / 房间对话，随 `state` 推后端），
   **音频文件本身不进 `state`** —— 本机文件以 Blob 存 IndexedDB 的 `audio:<曲目 id>` 键下，只在这台设备上播，换设备要重新导入。
   本机版（`web/lib/audio.ts` + `web/lib/engine/room.ts`）：
-  「本机文件 / 音频直链」走 `<audio>` 真播（进度、时长、seek 都是真的），「网易云」用官方外链播放器 iframe 播（版权与进度都归网易云）；
-  `playedSec` 只在 `<audio>` 真的在走时累加（每 10 秒落盘），网易云 / 只有歌名的曲目不计数。
+  「本机文件 / 音频直链 / 网易云」都走 `<audio>` 真播（进度、时长、seek 都是真的）；
+  网易云音频由 `/api/v1/music/audio` 默认 302 到公开音频 CDN，浏览器直接取 Range，不跳网易云页面。
+  `playedSec` 只在 `<audio>` 真的在走时累加（每 10 秒落盘），只有歌名、没有音频地址的曲目不计数。
   房间排程同样是**从数据推导 + 种子随机**（种子 = 曲目 id + 10 分钟节拍）：他进房间 / 说一句 / 加一首 / 到点先走，刷新不重掷。
 
 - **真实语音（MiniMax T2A）**：Key 存后端（`apps/server/.data/db.json` 的 `integrations`，或 `apps/server/.env`；**设置页填的优先**），
