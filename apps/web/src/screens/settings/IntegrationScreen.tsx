@@ -48,6 +48,7 @@ export function IntegrationScreen() {
   const [apiKey, setApiKey] = useState('')
   const [groupId, setGroupId] = useState<string | null>(null)
   const [model, setModel] = useState<string | null>(null)
+  const [customModel, setCustomModel] = useState('')
   const [voiceId, setVoiceId] = useState<string | null>(null)
   const [customVoice, setCustomVoice] = useState('')
   const [testing, setTesting] = useState(false)
@@ -75,6 +76,7 @@ export function IntegrationScreen() {
     if (!loaded) return
     setGroupId((v) => v ?? status.minimax.groupId)
     setModel((v) => v ?? status.minimax.model)
+    setCustomModel((v) => v || (MODELS.some((m) => m.id === status.minimax.model) ? '' : status.minimax.model))
     setVoiceId((v) => v ?? status.minimax.voiceId)
     setFreshness((v) => v ?? status.search.freshness)
     setCount((v) => v ?? status.search.count)
@@ -84,8 +86,9 @@ export function IntegrationScreen() {
     void refresh()
   }, [refresh])
 
-  const effModel = model ?? status.minimax.model
+  const effModel = (model ?? status.minimax.model).trim() || status.minimax.model || 'speech-2.8-hd'
   const effVoice = voiceId ?? status.minimax.voiceId
+  const modelIsPreset = MODELS.some((m) => m.id === effModel)
   const canSave = !PROXY_MODE || adminPassword.trim().length > 0
   const admin = PROXY_MODE ? adminPassword.trim() : undefined
 
@@ -284,19 +287,31 @@ export function IntegrationScreen() {
             />
           </Field>
 
-          <Field label="GroupId" hint="MiniMax 控制台的 GroupId（会出现在请求 URL 里，不算机密）">
+          <Field label="GroupId（旧版控制台才需要）" hint="不是代理网址；新版 Key 可以留空">
             <input
               value={groupId ?? ''}
               onChange={(e) => setGroupId(e.target.value)}
-              placeholder="例如 18xxxxxxxx"
+              placeholder="旧版的一串数字，例如 18…；新版留空即可"
               className="w-full rounded-lg bg-page px-3 py-2.5 text-[14px] text-ink outline-none ring-1 ring-hairline placeholder:text-ink-faint focus:ring-brand"
             />
+            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
+              新版 MiniMax（platform.minimax.io / api.minimax.io）只用 API Key，不需要 GroupId；旧版控制台才有这一项。
+              代理会先走新版接口，填错了也不会影响新版 Key。
+            </p>
           </Field>
 
-          <Field label="模型">
+          <Field label="模型" hint="最新是 2.8；也能自己填模型 ID">
             <select
-              value={effModel}
-              onChange={(e) => setModel(e.target.value)}
+              value={modelIsPreset ? effModel : '__custom'}
+              onChange={(e) => {
+                if (e.target.value === '__custom') {
+                  setCustomModel(modelIsPreset ? '' : effModel)
+                  setModel(effModel)
+                } else {
+                  setCustomModel('')
+                  setModel(e.target.value)
+                }
+              }}
               className="w-full rounded-lg bg-page px-3 py-2.5 text-[14px] text-ink outline-none ring-1 ring-hairline focus:ring-brand"
             >
               {MODELS.map((m) => (
@@ -304,8 +319,17 @@ export function IntegrationScreen() {
                   {m.name}
                 </option>
               ))}
-              {!MODELS.some((m) => m.id === effModel) && <option value={effModel}>{effModel}</option>}
+              <option value="__custom">{modelIsPreset ? '自定义模型…' : `自定义：${effModel}`}</option>
             </select>
+            <input
+              value={customModel}
+              onChange={(e) => {
+                setCustomModel(e.target.value)
+                setModel(e.target.value)
+              }}
+              placeholder={`自定义模型 ID（当前 ${effModel}）`}
+              className="mt-2 w-full rounded-lg bg-page px-3 py-2 text-[13px] text-ink outline-none ring-1 ring-hairline placeholder:text-ink-faint focus:ring-brand"
+            />
           </Field>
 
           <Field label="音色" hint="系统音色之外，也能填克隆音色的 voiceId">

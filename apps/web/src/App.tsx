@@ -34,6 +34,8 @@ import { MessagePopup } from '@/components/common/MessagePopup'
 import { ImageViewer } from '@/components/common/ImageViewer'
 import { startChatKeepAlive, stopChatKeepAlive, resumeChatKeepAlive } from '@/lib/keepAlive'
 import { useUIStore } from '@/store/useUIStore'
+import { useChatStore } from '@/store/useChatStore'
+import { playSfx, unlockSfx } from '@/lib/sfx'
 
 /** 屏幕栈：push 时从右滑入，back 时反向 */
 const SCREENS = {
@@ -84,6 +86,7 @@ export default function App() {
   }, [backgroundKeepAlive])
   useEffect(() => {
     const wake = () => {
+      unlockSfx()
       if (useUIStore.getState().backgroundKeepAlive) void resumeChatKeepAlive()
     }
     window.addEventListener('pointerdown', wake, { once: true })
@@ -93,6 +96,29 @@ export default function App() {
       window.removeEventListener('keydown', wake)
     }
   }, [])
+
+  /* 提示音：任何新消息 / 拍一拍都只响一次。
+     第一次挂载时把已有记录记下来 —— 刷新后不会把整段聊天重播一遍。 */
+  const messages = useChatStore((s) => s.messages)
+  const seenMessages = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    if (!seenMessages.current) {
+      seenMessages.current = new Set(messages.map((m) => m.id))
+      return
+    }
+    const fresh = messages.filter((m) => !seenMessages.current?.has(m.id))
+    for (const m of fresh) seenMessages.current.add(m.id)
+    const meId = useChatStore.getState().conversation?.me.id
+    for (const m of fresh) {
+      if (m.kind === 'SYSTEM' || m.kind === 'CALL_EVENT') continue
+      // 只给「此刻刚发生」的消息配声音：远端补拉的旧记录不响
+      const at = +new Date(m.createdAt)
+      if (Number.isFinite(at) && Date.now() - at > 20_000) continue
+      const mine = m.senderId === meId
+      if (m.kind === 'PAT') playSfx(mine ? 'myPat' : 'hisPat')
+      else playSfx(mine ? 'myMessage' : 'hisMessage')
+    }
+  }, [messages])
 
   /* 系统状态栏 / 浏览器顶栏的颜色跟着主题走（装到桌面后是独立窗口，这一条最显眼）。
      主题是直接写 documentElement 的行内 CSS 变量的（lib/theme.ts），所以这里盯着属性变化。 */

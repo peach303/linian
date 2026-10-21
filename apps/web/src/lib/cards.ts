@@ -58,8 +58,18 @@ export const bareSentence = (s: string): string =>
     .replace(/[\s\u3000]+/g, '')
     .replace(/[，。！？、…~～,.!?;:；：'"“”‘’「」『』()（）[\]【】·—\-]+/g, '')
 
+/** 媒体卡指纹：dataURL 很长，但前几十个字符是相同的头部，不能只截前缀 */
+function mediaHash(mediaUrl: string): string {
+  let h = 2166136261
+  for (let i = 0; i < mediaUrl.length; i++) {
+    h ^= mediaUrl.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0).toString(36)
+}
+
 export const cardHash = (c: Pick<Card, 'text' | 'mediaUrl'>): string =>
-  c.mediaUrl ? `md:${c.mediaUrl.slice(0, 96)}` : `tx:${normText(c.text ?? '')}`
+  c.mediaUrl ? `md:${mediaHash(c.mediaUrl)}` : `tx:${normText(c.text ?? '')}`
 
 /** Dice 系数（字符二元组），0~1；用于「疑似重复」提示 */
 export function similarity(a: string, b: string): number {

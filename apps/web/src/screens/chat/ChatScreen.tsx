@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Avatar } from '@/components/common/Avatar'
 import { NavBar } from '@/components/common/NavBar'
 import { ChatInputBar } from '@/components/chat/ChatInputBar'
@@ -29,16 +29,28 @@ export function ChatScreen() {
   const [acting, setActing] = useState<Message | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const firstScroll = useRef(true)
 
   const messages = chat((s) => s.messages)
   const peerTyping = chat((s) => s.peerTyping)
   const openExtend = chat((s) => s.openExtend)
 
   /* 新消息自动滚底。
-     注意：不能用 scrollIntoView（它会连带把外层页面也滚走），只滚消息容器 */
-  useEffect(() => {
+     注意：不能用 scrollIntoView（它会连带把外层页面也滚走），只滚消息容器。
+     第一次进入时直接落到底，不做平滑动画 —— 否则会先看到顶部再「唰」地滑下去。 */
+  useLayoutEffect(() => {
     const el = listRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (!el) return
+    if (firstScroll.current) {
+      firstScroll.current = false
+      el.scrollTop = el.scrollHeight
+      // 图片 / 字卡量完高度后再补一次，避免首屏差半屏
+      const raf = requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+      })
+      return () => cancelAnimationFrame(raf)
+    }
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages.length, peerTyping])
 
   /* ── 空态：还没有好友 ── */
@@ -65,7 +77,7 @@ export function ChatScreen() {
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-page">
+    <div className="relative isolate flex min-h-0 flex-1 flex-col bg-page">
       {/* ── 聊天背景（美化可换） ── */}
       <div
         className="absolute inset-0 -z-10"
@@ -151,6 +163,7 @@ export function ChatScreen() {
                 peerName={dream.nickname}
                 peerAvatar={dream.avatarUrl}
                 myAvatar={me.avatarUrl}
+                myName={me.nickname}
                 onPatAvatar={() => openExtend('PAT')}
                 onLongPress={(msg) => setActing(msg)}
               />

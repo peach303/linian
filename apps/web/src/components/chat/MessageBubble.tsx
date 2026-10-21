@@ -15,6 +15,7 @@ import { VoiceBubble } from '@/components/chat/VoiceBubble'
 import { HisQuestionCard } from '@/components/chat/HisQuestionCard'
 import { callSummary } from '@/lib/engine/call'
 import { ABOUT_LABEL, MEANING_SOURCE_LABEL } from '@/lib/engine/meaning'
+import { hisPatLine, myPatLine } from '@/lib/pats'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useViewerStore } from '@/store/useViewerStore'
@@ -37,6 +38,8 @@ interface Props {
   peerName?: string
   peerAvatar?: string
   myAvatar?: string
+  /** 我的昵称；历史默认拍一拍按当前昵称重新渲染 */
+  myName?: string
   onLongPress?: (m: Message) => void
   /** 点他的头像（拍一拍） */
   onPatAvatar?: () => void
@@ -48,6 +51,7 @@ export function MessageBubble({
   peerName = '梦角',
   peerAvatar,
   myAvatar,
+  myName = '我',
   onLongPress,
   onPatAvatar,
 }: Props) {
@@ -55,6 +59,12 @@ export function MessageBubble({
 
   /* 拍一拍 / 系统提示：整行居中的浅色小字，不带头像 */
   if (message.kind === 'PAT' || message.kind === 'SYSTEM') {
+    let text = message.text
+    if (message.kind === 'PAT') {
+      const suffix = String(message.payload?.suffix ?? '').trim()
+      const side = message.payload?.pat === 'his' || !mine ? 'his' : 'mine'
+      if (suffix) text = side === 'his' ? hisPatLine(peerName, suffix, myName) : myPatLine(peerName, suffix, myName)
+    }
     return (
       <div className="my-1.5 px-3 text-center text-[11px] text-ink-faint">
         <span
@@ -64,7 +74,7 @@ export function MessageBubble({
             onLongPress?.(message)
           }}
         >
-          {message.text}
+          {text}
         </span>
       </div>
     )
@@ -80,7 +90,7 @@ export function MessageBubble({
         <Avatar src={mine ? myAvatar : peerAvatar} name={mine ? '我' : peerName} size={40} />
       )}
 
-      <div className={clsx('flex max-w-[70%] flex-col', mine ? 'items-end' : 'items-start')}>
+      <div className={clsx('flex min-w-0 max-w-[70%] flex-col', mine ? 'items-end' : 'items-start')}>
         {/* 引用块 */}
         {message.quoteOf && !recalled && (
           <div className="mb-1 max-w-full truncate rounded-md border-l-2 border-brand bg-brand-soft/50 px-2 py-1 text-[12px] text-ink-sub">
@@ -162,7 +172,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
   const openImage = useViewerStore((s) => s.openImage)
   const openDoodle = useViewerStore((s) => s.openDoodle)
   const base = [
-    'ln-bubble animate-bubble-in px-3 py-2 text-[15px] leading-[1.45] break-words',
+    'ln-bubble animate-bubble-in px-3 py-2 text-[15px] leading-[1.45] break-words [overflow-wrap:anywhere]',
     mine ? 'ln-bubble-me' : 'ln-bubble-peer',
     BUBBLE_BASE,
     mine ? `bg-bubble text-bubble-ink ${MESSAGE_BUBBLE.mine.tail}` : `bg-bubble-peer text-bubble-ink shadow-card ${MESSAGE_BUBBLE.peer.tail}`,
@@ -223,7 +233,11 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
 
       if (ct === 'KAOMOJI' || ct === 'EMOJI') {
         return (
-          <div className="animate-bubble-in px-1 text-[22px] leading-tight" onContextMenu={common.onContextMenu}>
+          <div
+            {...common}
+            className={clsx(base, 'px-3 py-1.5 text-[21px] leading-tight')}
+            onContextMenu={common.onContextMenu}
+          >
             {message.text}
           </div>
         )
@@ -232,7 +246,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       // TEXT / SENTENCE：和普通文字一样
       return (
         <div {...common}>
-          {message.text}
+          <TextWithLinks text={message.text ?? ''} />
           {mine && message.status === 'SENDING' && (
             <span className="ml-1 align-[1px] text-[10px] text-ink-faint">✓</span>
           )}
@@ -294,7 +308,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       const p = message.payload as unknown as GiftPayload | undefined
       const acc = p?.accepted
       return (
-        <div {...common} className="animate-bubble-in w-[216px] p-0">
+        <div {...common} className={clsx(base, 'w-[216px] !p-0')}>
           <div className="flex items-center gap-2 px-3 py-2.5">
             {p?.imageUrl ? (
               <img src={p.imageUrl} alt="" className="h-9 w-9 rounded-lg object-cover" />
@@ -330,7 +344,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       const p = message.payload as unknown as CallPayload | undefined
       const missed = p?.phase === 'MISSED'
       return (
-        <div {...common} className="animate-bubble-in w-[214px] p-0">
+        <div {...common} className={clsx(base, 'w-[214px] !p-0')}>
           <div className="flex items-center gap-2 px-3 py-2.5">
             <span className="text-[22px] leading-none">{missed ? '📵' : '📞'}</span>
             <div className="min-w-0 flex-1">
@@ -346,10 +360,16 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
 
     case 'MUSIC_INVITE': {
       const p = message.payload as unknown as MusicPayload | undefined
+      const cover = String(p?.cover ?? '').trim()
+      const coverIsImage = /^(?:https?:|data:image\/|blob:)/i.test(cover)
       return (
-        <div {...common} className="animate-bubble-in w-[228px] p-0">
+        <div {...common} className={clsx(base, 'w-[228px] !p-0')}>
           <div className="flex items-center gap-2 px-3 py-2.5">
-            <span className="text-[26px] leading-none">{p?.cover ?? '🎵'}</span>
+            {coverIsImage ? (
+              <img src={cover} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover ring-1 ring-hairline" />
+            ) : (
+              <span className="text-[26px] leading-none">{cover || '🎵'}</span>
+            )}
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px]">{p?.title ?? '一首歌'}</div>
               <div className="truncate text-[11px] text-ink-faint">{p?.artist ?? ''}</div>
@@ -385,7 +405,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       const p = message.payload as unknown as DoodlePayload | undefined
       const strokes = p?.strokes ?? []
       return (
-        <div {...common} className="animate-bubble-in w-[216px] p-0">
+        <div {...common} className={clsx(base, 'w-[216px] !p-0')}>
           <div className="p-2">
             <button
               className="tap block w-full"
@@ -506,7 +526,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       const ans = c?.answer
       const picked = opts.find((o) => o.id === ans?.optionId)
       return (
-        <div {...common} className={clsx(base, 'w-[240px] p-0')}>
+        <div {...common} className={clsx(base, 'w-[240px] !p-0')}>
           <div className="flex items-center gap-1.5 px-3 py-2 text-[14px]">
             <span className="text-[13px]">🤔</span>
             <span className="min-w-0 flex-1">抉择 · {message.text}</span>
@@ -560,7 +580,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       const ansMap = new Map((q?.answers ?? []).map((a) => [a.itemId, a]))
       const filled = q?.submittedAt
       return (
-        <div {...common} className={clsx(base, 'w-[252px] p-0')}>
+        <div {...common} className={clsx(base, 'w-[252px] !p-0')}>
           <div className="flex items-center gap-1.5 px-3 py-2 text-[14px]">
             <span className="text-[13px]">📋</span>
             <span className="min-w-0 flex-1">{q?.title ?? message.text}</span>
@@ -621,7 +641,7 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
     default:
       return (
         <div {...common}>
-          {message.text}
+          <TextWithLinks text={message.text ?? ''} />
           {/* 状态点：发送中 / 已读 */}
           {mine && message.status === 'SENDING' && (
             <span className="ml-1 align-[1px] text-[10px] text-ink-faint">·</span>
@@ -629,6 +649,45 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
         </div>
       )
   }
+}
+
+/**
+ * 文字气泡里的链接：不要把一条几百字的网易云分享链接原样铺满屏幕。
+ * 链接仍然能点开，但显示成一个短标签；文字照常保留换行。
+ */
+const URL_SPLIT = /(https?:\/\/[^\s]+)/g
+
+function TextWithLinks({ text }: { text: string }) {
+  const parts = text.split(URL_SPLIT)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (!/^https?:\/\//i.test(part)) return <span key={i}>{part}</span>
+        const tail = part.match(/[),.;!?，。！？；、）】》]+$/)?.[0] ?? ''
+        const href = tail ? part.slice(0, part.length - tail.length) : part
+        const isNetease = /(^|\.)music\.163\.com|y\.music\.163\.com|163cn\.tv/i.test(href)
+        const label = isNetease
+          ? '🎧 网易云音乐链接'
+          : href.length > 42
+            ? `${href.slice(0, 39)}…`
+            : href
+        return (
+          <span key={i}>
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-brand-deep underline decoration-brand/40 underline-offset-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {label}
+            </a>
+            {tail}
+          </span>
+        )
+      })}
+    </>
+  )
 }
 
 /**

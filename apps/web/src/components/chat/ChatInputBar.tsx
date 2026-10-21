@@ -1,7 +1,7 @@
 import clsx from 'clsx'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { VoiceRecorderButton } from '@/components/chat/VoiceRecorderButton'
-import { makeCard } from '@/lib/cards'
+import { cardHash, makeCard } from '@/lib/cards'
 import { pickSticker } from '@/lib/file'
 import { nid } from '@/lib/ids'
 import { useCardsStore } from '@/store/useCardsStore'
@@ -36,6 +36,7 @@ export function ChatInputBar() {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [panel, setPanel] = useState<'emoji' | 'sticker'>('emoji')
   const [stickerErr, setStickerErr] = useState('')
+  const stickerBatchRef = useRef<HTMLInputElement>(null)
 
   const EMOJIS = ['😊', '😭', '🥺', '😳', '🤔', '😴', '🍰', '🌙', '💙', '✨', '(๑•̀ㅂ•́)و✧', '˚‧º·(˚ ˃̣̣̥᷄⌓˂̣̣̥᷅ )‧º·˚']
 
@@ -90,6 +91,42 @@ export function ChatInputBar() {
       },
       { onError: setStickerErr },
     )
+  }
+
+  /** 批量入库：只进字卡库，不发到聊天（聊天面板里单独一个入口） */
+  async function importStickerBatch(files: FileList | null) {
+    const list = Array.from(files ?? [])
+    if (!list.length) return
+    setStickerErr('')
+    let added = 0
+    const hashes = new Set(cards.filter((c) => c.type === 'STICKER').map((c) => cardHash(c)))
+    for (const f of list) {
+      if (!f.type.startsWith('image/') || f.size > 10 * 1024 * 1024) continue
+      const url = await new Promise<string>((resolve) => {
+        const r = new FileReader()
+        r.onload = () => resolve(String(r.result))
+        r.onerror = () => resolve('')
+        r.readAsDataURL(f)
+      })
+      if (!url) continue
+      const text = f.name.replace(/\.[^.]+$/, '').slice(0, 30) || '表情包'
+      const hash = cardHash({ text, mediaUrl: url })
+      if (hashes.has(hash)) continue
+      hashes.add(hash)
+      upsertCard(
+        makeCard({
+          type: 'STICKER',
+          source: 'CUSTOM',
+          text,
+          mediaUrl: url,
+          category: '表情包',
+          tags: ['表情包'],
+          noFreeSentence: true,
+        }),
+      )
+      added++
+    }
+    setStickerErr(added ? `已导入 ${added} 个到字卡库（没有发出去）` : '没有新的图片可导入')
   }
 
   return (
@@ -186,9 +223,26 @@ export function ChatInputBar() {
               </button>
             ))}
             {panel === 'sticker' && (
-              <span className="ml-auto text-[10px] text-ink-faint">GIF / 动图存在本机</span>
+              <button
+                className="tap ml-auto rounded-full bg-surface px-2 py-0.5 text-[10px] text-brand-deep ring-1 ring-hairline"
+                onClick={() => stickerBatchRef.current?.click()}
+                title="一次选多张，只进字卡库，不发送"
+              >
+                批量入库
+              </button>
             )}
           </div>
+
+          {panel === 'sticker' && (
+            <input
+              ref={stickerBatchRef}
+              type="file"
+              accept="image/*,.gif,.apng"
+              multiple
+              className="hidden"
+              onChange={(e) => void importStickerBatch(e.target.files)}
+            />
+          )}
 
           {panel === 'emoji' ? (
             <div className="grid max-h-40 grid-cols-8 gap-2 overflow-y-auto px-3 py-3">

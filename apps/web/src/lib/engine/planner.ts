@@ -12,6 +12,7 @@
  */
 import { POOL_OF, bareSentence, cardHash } from '@/lib/cards'
 import { hisPatLine } from '@/lib/pats'
+import { useAppStore } from '@/store/useAppStore'
 import { composeSentence, inferEmotion, isPinyinCard, toPinyin } from './compose'
 import { emotionFromTags } from '@/lib/voice'
 import type { Card } from '@/types/cards'
@@ -193,11 +194,13 @@ export function planReply(input: PlanInput): ReplyPlan {
 
   /* ── 2. 拍一拍 ── */
   if (rollToggle(c.pat)) {
-    const suffix = input.hisPats?.length ? pick(input.hisPats) : '脑袋'
-    step('拍一拍', `命中 → 先拍一下（拍了拍我的${suffix}）再说话`, true)
+    const suffix = input.hisPats?.length ? pick(input.hisPats) : '{me}'
+    const meName = useAppStore.getState().me.nickname
+    const line = hisPatLine(input.peerName ?? '梦角', suffix, meName)
+    step('拍一拍', `命中 → ${line}，再说话`, true)
     items.push({
       kind: 'PAT',
-      text: hisPatLine(input.peerName ?? '梦角', suffix),
+      text: line,
       delayMs: 800,
       payload: { pat: 'his', suffix },
     })

@@ -1,5 +1,6 @@
 import clsx from 'clsx'
 import { useState } from 'react'
+import { hisPatLine, myPatLine } from '@/lib/pats'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
 import type { PatSide } from '@/types'
@@ -14,6 +15,7 @@ import type { PatSide } from '@/types'
 export function PatPanel() {
   const pats = useAppStore((s) => s.pats)
   const dreamName = useAppStore((s) => s.dream.nickname)
+  const meName = useAppStore((s) => s.me.nickname)
   const addPat = useAppStore((s) => s.addPat)
   const removePat = useAppStore((s) => s.removePat)
   const togglePat = useAppStore((s) => s.togglePat)
@@ -42,8 +44,8 @@ export function PatPanel() {
               key={p.id}
               className="group inline-flex items-center gap-1 rounded-full bg-surface pl-2.5 pr-1 py-1 text-[12px] text-ink shadow-card ring-1 ring-hairline"
             >
-              <button className="tap" onClick={() => sendPat(p.text)} title={`拍了拍${p.text}`}>
-                {p.text}
+              <button className="tap" onClick={() => sendPat(p.text)} title={myPatLine(dreamName, p.text, meName)}>
+                {myPatLine(dreamName, p.text, meName)}
               </button>
               <button
                 className="tap grid h-4 w-4 place-items-center rounded-full text-[10px] text-ink-faint hover:bg-hairline/70"
@@ -85,7 +87,7 @@ export function PatPanel() {
           {pats.his.map((p) => (
             <li key={p.id} className="flex items-center gap-2 px-2.5 py-1.5">
               <span className={clsx('flex-1 text-[12px]', p.enabled ? 'text-ink' : 'text-ink-faint line-through')}>
-                拍了拍我的{p.text}
+                {hisPatLine(dreamName, p.text, meName)}
               </span>
               <button
                 className={clsx(

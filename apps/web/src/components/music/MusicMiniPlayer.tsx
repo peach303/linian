@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { onPlayer, pause, play, playerState, playTrack, stop, type PlayerState } from '@/lib/audio'
 import { mmss, neighbourTrack } from '@/lib/music'
 import { clearMedia, setMedia, setMediaPlaying } from '@/lib/keepAlive'
+import { useFloatingDrag } from '@/lib/useFloatingDrag'
 import { useAppStore } from '@/store/useAppStore'
 import { useUIStore } from '@/store/useUIStore'
 import type { Track } from '@/types'
@@ -22,6 +23,7 @@ export function MusicMiniPlayer() {
   const push = useAppStore((s) => s.push)
   const mini = useUIStore((s) => s.musicMini)
   const [player, setPlayer] = useState<PlayerState>(() => playerState())
+  const drag = useFloatingDrag()
 
   useEffect(() => onPlayer(setPlayer), [])
 
@@ -61,12 +63,17 @@ export function MusicMiniPlayer() {
 
   return (
     <div
-      className="absolute left-2 right-2 z-40 flex items-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-br from-[#5aa0e8] to-[#8fc4f8] py-2 pl-2 pr-1.5 text-white shadow-phone ring-1 ring-white/30"
-      style={{ bottom: `calc(${bottom}px + env(safe-area-inset-bottom, 0px))` }}
+      className="absolute left-2 right-2 z-40 flex cursor-grab touch-none items-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-br from-[#5aa0e8] to-[#8fc4f8] py-2 pl-2 pr-1.5 text-white shadow-phone ring-1 ring-white/30 active:cursor-grabbing"
+      style={{ bottom: `calc(${bottom}px + env(safe-area-inset-bottom, 0px))`, ...drag.style }}
+      {...drag.handlers}
     >
       {/* 进度条：一条细线，真的跟着播放走 */}
       <span className="absolute inset-x-0 top-0 h-0.5 bg-white/25">
         <span className="block h-full bg-white/85 transition-[width] duration-500" style={{ width: `${progress * 100}%` }} />
+      </span>
+
+      <span className="shrink-0 select-none px-0.5 text-[11px] leading-none opacity-70" title="按住拖动换位置">
+        ⠿
       </span>
 
       <button className="tap flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => push('music-room')} title="回到一起听">

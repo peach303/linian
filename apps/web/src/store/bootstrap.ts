@@ -7,7 +7,7 @@
 import { applyTheme } from '@/lib/theme'
 import { API_ENABLED, PROXY_MODE, STATIC_ONLY } from '@/lib/deploy'
 import { attachProactiveScheduler, attachReplyEngine } from '@/lib/engine/runtime'
-import { finalizeStaleCalls } from '@/lib/engine/call'
+import { finalizeStaleCalls, attachIncomingCallEngine } from '@/lib/engine/call'
 import { attachCompanionEngine } from '@/lib/engine/companion'
 import { attachRoomEngine } from '@/lib/engine/room'
 import { attachWatchEngine } from '@/lib/engine/watch'
@@ -78,6 +78,8 @@ export async function bootstrap() {
   attachCheckEngine()
   /* 上次关机时正在进行的通话 → 直接按「已挂断」落定，别卡在「正在通话」 */
   finalizeStaleCalls()
+  /* 他偶尔会主动打来：受「规则 → 通话 → 主动来电」控制 */
+  attachIncomingCallEngine()
 
   if (!API_ENABLED) {
     /* 纯静态站：没有后端，语音 / 搜索 / 跨设备同步都不假装能用 */

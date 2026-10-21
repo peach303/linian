@@ -1,7 +1,8 @@
 import { create } from 'zustand'
 import { applyTheme } from '@/lib/theme'
 import { nid } from '@/lib/ids'
-import { defaultPats, makePat } from '@/lib/pats'
+import { defaultPats, makePat, migratePats } from '@/lib/pats'
+import { neteaseFallbackUrl, neteaseStreamUrl } from '@/lib/music'
 import { DEFAULT_GIFTS } from '@/lib/gifts'
 import { DEFAULT_FAVORITE_REASONS } from '@/lib/favorites'
 import {
@@ -1209,6 +1210,22 @@ export const useAppStore = create<AppState>((set) => ({
 
   hydrate: (s) => {
     applyTheme(s.themeKey)
+    const storedRoom = s.musicRoom ?? emptyRoom()
+    const room = {
+      ...storedRoom,
+      tracks: storedRoom.tracks.map((t) =>
+        t.source.kind === 'netease'
+          ? {
+              ...t,
+              source: {
+                ...t.source,
+                streamUrl: t.source.streamUrl ?? neteaseStreamUrl(t.source.songId),
+                fallbackUrl: t.source.fallbackUrl ?? neteaseFallbackUrl(t.source.songId),
+              },
+            }
+          : t,
+      ),
+    }
     set({
       ready: true,
       themeKey: s.themeKey,
@@ -1216,11 +1233,11 @@ export const useAppStore = create<AppState>((set) => ({
       dream: s.dream,
       anniversaries: s.anniversaries,
       bonded: s.bonded,
-      pats: s.pats ?? defaultPats(),
+      pats: migratePats(s.pats),
       moments: s.moments ?? [],
       letters: s.letters ?? [],
       gifts: s.gifts?.length ? s.gifts : DEFAULT_GIFTS.map((g) => ({ ...g })),
-      room: s.musicRoom ?? emptyRoom(),
+      room,
       voices: s.voices ?? [],
       favorites: s.favorites ?? [],
       favoriteReasons: s.favoriteReasons?.length ? s.favoriteReasons : DEFAULT_FAVORITE_REASONS,

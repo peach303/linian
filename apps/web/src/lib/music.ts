@@ -7,10 +7,11 @@ import type { MusicPayload, Track } from '@/types'
  * 三种来源，各播各的：
  *  - `local`  本机音频文件（mp3 / flac / m4a / wav…）→ `<audio>` 真播，进度、音量都在我们手里
  *  - `url`    音频直链 → 同上
- *  - `netease` 网易云 → 用**官方外链播放器**（outchain）嵌进来播，进度以它自己的控件为准
+ *  - `netease` 网易云 → 有代理音频流时用 `<audio>` 真播；没有就退回官方外链播放器
  *
- * 网易云没有公开 API，登录态和版权曲库都在他们服务器上 ——
- * 所以这里只做「把官方的播放器嵌进来」，不碰音频流，也不假装拿到了音频。
+ * 网易云没有公开 API，登录态和版权曲库都在他们服务器上。
+ * 我们只代理公开的 `song/media/outer` 音频地址；版权 / VIP 曲目仍然可能只给试听或直接 404，
+ * 这时候界面会明说「播不了」，不假装拿到了音频。
  */
 
 export interface Song {
@@ -47,7 +48,10 @@ export const songLabel = (m: Pick<MusicPayload, 'title' | 'artist'>) =>
  */
 export function neteaseSongId(input: string): string | null {
   const s = input.trim()
-  if (/^\d{4,}$/.test(s)) return s
+  // 只有「整条就是数字」且至少 6 位才当歌曲 id；随手发的年份 / 金额不该变成歌卡
+  if (/^\d{6,}$/.test(s)) return s
+  // 必须真的是网易云链接，别把别家 URL 的 id 参数当歌曲
+  if (!/(?:^|\/\/|\.)(?:music\.163\.com|y\.music\.163\.com)(?:[\/?#]|$)/i.test(s)) return null
   const m =
     s.match(/[?&]id=(\d+)/) ??
     s.match(/song\/(\d+)/) ??
@@ -61,6 +65,17 @@ export const neteaseEmbedUrl = (songId: string, auto = 0) =>
   `https://music.163.com/outchain/player?type=2&id=${encodeURIComponent(songId)}&auto=${auto}&height=66`
 
 export const neteaseSongUrl = (songId: string) => `https://music.163.com/song?id=${songId}`
+
+/**
+ * 走我们自己的代理播放网易云音频。
+ * 代理默认 302 到公开镜像，浏览器再直接向 CDN 请求 Range；所以首字节快、能 seek、能算真实播放时长。
+ */
+export const neteaseStreamUrl = (songId: string) =>
+  `${API_BASE}/music/audio?id=${encodeURIComponent(songId)}`
+
+/** 镜像/代理都不通时，浏览器再试一次网易云官方外链（手机网络通常能连） */
+export const neteaseFallbackUrl = (songId: string) =>
+  `https://music.163.com/song/media/outer/url?id=${encodeURIComponent(songId)}.mp3`
 
 /** 网易云曲目的展示封面（没有就退回 emoji） */
 export const neteaseCoverEmoji = '🎧'
@@ -108,9 +123,9 @@ export const trackFromSong = (song: Song, addedBy: 'me' | 'him'): Track => ({
   addedAt: new Date().toISOString(),
 })
 
-/** 能不能真的出声（本机文件 / 直链可以；网易云交给官方播放器；只有歌名的播不了） */
+/** 能不能真的出声（本机文件 / 直链 / 代理音频流可以；旧网易云记录交给官方播放器；只有歌名的播不了） */
 export const playableKind = (t: Track): 'audio' | 'netease' | 'none' => {
-  if (t.source.kind === 'netease') return 'netease'
+  if (t.source.kind === 'netease') return t.source.streamUrl ? 'audio' : 'netease'
   if (t.source.kind === 'local') return 'audio'
   if (t.source.kind === 'url') return t.source.url ? 'audio' : 'none'
   return 'none'

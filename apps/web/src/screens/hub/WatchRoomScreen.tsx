@@ -28,7 +28,7 @@ import type { WatchItem } from '@/types'
  * 两条边界写在明面上，不糊过去：
  *   ① **进度是真的** —— 本机视频文件 / 直链走 `<video>`，看到第几秒、一共看了多久都是真的；
  *      B 站的片走**官方 iframe 播放器**（`player.bilibili.com`），跨域读不到它的 `currentTime`，
- *      所以那一种**不算「一起看了多久」，也不发弹幕**（不在假进度上飘字）。
+ *      所以不显示假进度、也不发弹幕；但会按「你们待在房间里的真实时间」累计一起看了多久。
  *   ② **他说的话是抽出来的** —— 他进不进来、发几条弹幕、第几秒发、房间里说一句、会不会先走，
  *      全在 `watchRoom.*` 规则里，种子 = 这一次观影的 id（刷新不会重掷）。
  *      他这一场排的弹幕可以点开看（会剧透，自己决定）。
@@ -41,6 +41,7 @@ export function WatchRoomScreen() {
   const removeWatchItem = useAppStore((s) => s.removeWatchItem)
   const markWatchFinished = useAppStore((s) => s.markWatchFinished)
   const pushWatchMessage = useAppStore((s) => s.pushWatchMessage)
+  const addWatchPlayedSec = useAppStore((s) => s.addWatchPlayedSec)
 
   const active = room.active
   const item = useMemo(() => room.items.find((i) => i.id === active?.itemId), [room.items, active?.itemId])
@@ -81,6 +82,42 @@ export function WatchRoomScreen() {
     const t = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(t)
   }, [active])
+
+  /**
+   * B 站 / 跨域播放器读不到真实进度，但「你们在房间里待了多久」是知道的。
+   * 只在页面可见、房间还开着时累计，每 5 秒落一次；切后台 / 离开会先补齐。
+   * 这不是假进度条 —— 只是把「一起看的时间」记下来。
+   */
+  useEffect(() => {
+    if (!active || kind !== 'iframe') return
+    let last = Date.now()
+    let acc = 0
+    const flush = () => {
+      const now = Date.now()
+      if (document.visibilityState === 'visible') acc += Math.max(0, (now - last) / 1000)
+      last = now
+      if (acc >= 4) {
+        addWatchPlayedSec(active.itemId, acc)
+        acc = 0
+      }
+    }
+    const t = setInterval(flush, 5000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        // 刚从后台回来：不把后台那段时间算进来
+        last = Date.now()
+        return
+      }
+      flush()
+      last = Date.now()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      flush()
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [active?.itemId, kind, addWatchPlayedSec])
 
   const begin = async (it: WatchItem, fromStart = false) => {
     startWatch(it.id)
@@ -191,7 +228,7 @@ export function WatchRoomScreen() {
             ) : (
               <p className="text-[11px] leading-relaxed text-white/60">
                 {kind === 'iframe'
-                  ? '进度归 B 站播放器管（跨域读不到），所以这一场不算「一起看了多久」，也不发弹幕。'
+                  ? '进度归 B 站播放器管（跨域读不到），所以不显示假进度、也不发弹幕；但你们在房间里的时间会算进「一起看了多久」。'
                   : '这部只有片名，播不了 —— 他陪着你看这件事就先放着。'}
               </p>
             )}
@@ -337,7 +374,7 @@ function Lobby({ onBegin }: { onBegin: (item: WatchItem, fromStart?: boolean) =>
           <h3 className="text-[13px] font-medium text-ink">一起看片</h3>
           <p className="mt-1.5 text-[11px] leading-relaxed text-ink-sub">
             本机视频文件 / 直链 → 用真播放器放，<b className="text-ink">看到第几秒、一共看了多久都是真的</b>；
-            B 站链接 → 用官方播放器嵌进来播，但跨域读不到它的进度，所以那种<b className="text-ink">不算一起看了多久，也不发弹幕</b>。
+            B 站链接 → 用官方播放器嵌进来播，跨域读不到它的进度，所以不显示假进度、也不发弹幕；但会按你们待在房间里的真实时间累计<b className="text-ink">一起看了多久</b>。
           </p>
           <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
             他的弹幕与发言是抽出来的（「设置 → 概率调节引擎 → 观影室」），种子 = 这一次观影的 id，刷新不会重掷。

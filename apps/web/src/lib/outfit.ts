@@ -30,7 +30,7 @@ export interface DailyOutfit {
   note: string
 }
 
-const SLOT_ORDER: OutfitSlot[] = ['outer', 'top', 'bottom', 'shoes', 'accessory']
+const SLOT_ORDER: OutfitSlot[] = ['outer', 'top', 'bottom', 'accessory', 'shoes']
 
 const OUTERS: OutfitPiece[] = [
   { id: 'outer_cardigan', slot: 'outer', label: '浅灰针织开衫', emoji: '🧥', color: '#9aa3ad', detail: '松松地敞着，袖口挽一点' },
@@ -123,9 +123,9 @@ export function outfitPieces(outfit: DailyOutfit): OutfitPiece[] {
 export const SLOT_LABEL: Record<OutfitSlot, string> = {
   outer: '外套',
   top: '上衣',
-  bottom: '下装',
-  shoes: '鞋',
+  bottom: '下衣',
   accessory: '配饰',
+  shoes: '鞋子',
 }
 
 /** 给 UI 用的一句话总结 */

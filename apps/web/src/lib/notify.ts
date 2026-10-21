@@ -13,7 +13,7 @@ import type { Message } from '@/types'
 import { useUIStore } from '@/store/useUIStore'
 
 const SW_URL = `${import.meta.env.BASE_URL}sw.js`
-const ICON_URL = `${import.meta.env.BASE_URL}icons/icon-192.png`
+const ICON_URL = `${import.meta.env.BASE_URL}icons/snow-192.png`
 
 export type NotifyPermission = 'unsupported' | 'default' | 'granted' | 'denied'
 

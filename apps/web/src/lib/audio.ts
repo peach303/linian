@@ -1,8 +1,8 @@
 /**
  * 真播放器（一个 `<audio>` 单例）
  *
- * 只做一件事：把「本机文件 / 音频直链」放出来 —— 进度、时长、音量、seek 都是真的。
- * 网易云的曲目不经过这里（用官方外链播放器播），只有歌名的曲目也不经过这里（播不了就明说）。
+ * 只做一件事：把「本机文件 / 音频直链 / 网易云代理音频流」放出来 —— 进度、时长、音量、seek 都是真的。
+ * 旧网易云记录（没有代理音频流）走官方外链播放器；只有歌名的曲目不经过这里（播不了就明说）。
  *
  * 本机文件从 IndexedDB 取 Blob → `URL.createObjectURL`，用完 revoke，不堆内存。
  */
@@ -24,6 +24,9 @@ export interface PlayerState {
 
 let audio: HTMLAudioElement | null = null
 let objectUrl: string | null = null
+let currentTrack: Track | null = null
+/** 网易云代理/镜像失败后，按顺序再试的地址 */
+let fallbackQueue: string[] = []
 let state: PlayerState = { playing: false, loading: false, position: 0, duration: 0 }
 const subs = new Set<(s: PlayerState) => void>()
 
@@ -61,21 +64,39 @@ function el(): HTMLAudioElement {
   a.addEventListener('ended', () => emit({ playing: false, position: a.duration || 0 }))
   a.addEventListener('waiting', () => emit({ loading: true }))
   a.addEventListener('canplay', () => emit({ loading: false }))
-  a.addEventListener('error', () =>
-    emit({ playing: false, loading: false, error: '这首播不了（文件不在这台设备上，或链接失效）' }),
-  )
+  a.addEventListener('error', () => {
+    // 网易云：代理镜像不通时，再让浏览器直连一次官方外链
+    const next = fallbackQueue.shift()
+    if (next) {
+      const wasPlaying = state.playing
+      a.src = next
+      a.load()
+      if (wasPlaying) void a.play().catch(() => emit({ playing: false }))
+      return
+    }
+    emit({
+      playing: false,
+      loading: false,
+      error:
+        currentTrack?.source.kind === 'netease'
+          ? '这首网易云播不了（可能版权 / VIP / 地区受限）'
+          : '这首播不了（文件不在这台设备上，或链接失效）',
+    })
+  })
   return a
 }
 
 /** 载入一首（不自动播）。本机文件先取 Blob，取不到就明说 */
 export async function loadTrack(track: Track): Promise<void> {
   const a = el()
+  currentTrack = track
   a.pause()
   releaseUrl()
   emit({ trackId: track.id, playing: false, loading: true, error: undefined, position: 0, duration: 0 })
 
   const kind = playableKind(track)
   if (kind !== 'audio') {
+    fallbackQueue = []
     a.removeAttribute('src')
     emit({ loading: false, error: kind === 'netease' ? undefined : '这首只有歌名，没有音频' })
     return
@@ -83,8 +104,18 @@ export async function loadTrack(track: Track): Promise<void> {
 
   let src = ''
   if (track.source.kind === 'url') {
+    fallbackQueue = []
     src = track.source.url
+  } else if (track.source.kind === 'netease') {
+    src = track.source.streamUrl ?? ''
+    fallbackQueue = track.source.fallbackUrl ? [track.source.fallbackUrl] : []
+    if (!src) {
+      a.removeAttribute('src')
+      emit({ loading: false, error: undefined })
+      return
+    }
   } else if (track.source.kind === 'local') {
+    fallbackQueue = []
     const blob = await readAudioFile(track.source.blobKey)
     if (!blob) {
       a.removeAttribute('src')
@@ -136,5 +167,7 @@ export function stop() {
   audio.pause()
   releaseUrl()
   audio.removeAttribute('src')
+  currentTrack = null
+  fallbackQueue = []
   emit({ trackId: undefined, playing: false, loading: false, position: 0, duration: 0 })
 }

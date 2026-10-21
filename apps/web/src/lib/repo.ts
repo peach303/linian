@@ -154,10 +154,14 @@ export const MAX_SEARCH_LOGS = 40
 function mergeAppearance(local?: Partial<Appearance>, remote?: Partial<Appearance>): Appearance {
   const l = local ?? {}
   const r = remote ?? {}
+  const icon = r.appIcon ?? l.appIcon
+  // 旧版默认是 🫧：换成雪人图标；用户自己挑过的仍然保留
+  const appIcon = icon?.mode === 'emoji' && icon.value === '🫧' ? DEFAULT_APPEARANCE.appIcon : icon
   return {
     ...DEFAULT_APPEARANCE,
     ...l,
     ...r,
+    appIcon: appIcon ?? DEFAULT_APPEARANCE.appIcon,
     photos: r.photos ?? l.photos ?? DEFAULT_APPEARANCE.photos,
     homeNote: r.homeNote ?? l.homeNote ?? DEFAULT_APPEARANCE.homeNote,
   }

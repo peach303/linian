@@ -10,11 +10,12 @@ import {
   type NotifyPermission,
 } from '@/lib/notify'
 import { THEME_PRESETS } from '@/lib/theme'
+import { playSfx, previewCallRing, unlockSfx } from '@/lib/sfx'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useIntegrationsStore } from '@/store/useIntegrationsStore'
 import { useRulesStore } from '@/store/useRulesStore'
-import { useUIStore } from '@/store/useUIStore'
+import { useUIStore, type SoundPrefs } from '@/store/useUIStore'
 import { clearConversation, clearMessages, flush, isOnline } from '@/lib/repo'
 
 /**
@@ -44,6 +45,35 @@ export function SettingsScreen() {
   const setKeepAlive = useUIStore((s) => s.setBackgroundKeepAlive)
   const [notifyPerm, setNotifyPerm] = useState<NotifyPermission>(() => notificationPermission())
   const [notifyNote, setNotifyNote] = useState('')
+
+  /* ── 声音提示（只存在这台设备） ── */
+  const ui = useUIStore()
+  const sfx: SoundPrefs = {
+    sfxMaster: ui.sfxMaster,
+    sfxIncomingCall: ui.sfxIncomingCall,
+    sfxOutgoingCall: ui.sfxOutgoingCall,
+    sfxHisMessage: ui.sfxHisMessage,
+    sfxMyMessage: ui.sfxMyMessage,
+    sfxHisPat: ui.sfxHisPat,
+    sfxMyPat: ui.sfxMyPat,
+  }
+  const setSfx = ui.setSfx
+
+  const soundRows: { key: keyof SoundPrefs; label: string; preview?: () => void }[] = [
+    { key: 'sfxIncomingCall', label: '他打来的来电铃声', preview: () => previewCallRing('incoming') },
+    { key: 'sfxOutgoingCall', label: '我打给他的回铃音', preview: () => previewCallRing('outgoing') },
+    { key: 'sfxHisMessage', label: '他发消息的提示音', preview: () => playSfx('hisMessage') },
+    { key: 'sfxMyMessage', label: '我发消息的提示音', preview: () => playSfx('myMessage') },
+    { key: 'sfxHisPat', label: '他拍一拍的提示音', preview: () => playSfx('hisPat') },
+    { key: 'sfxMyPat', label: '我拍一拍的提示音', preview: () => playSfx('myPat') },
+  ]
+
+  const toggleSfx = (key: keyof SoundPrefs, preview?: () => void) => {
+    unlockSfx()
+    const on = sfx[key]
+    if (!on && sfx.sfxMaster) preview?.()
+    setSfx(key, !on)
+  }
 
   const permLabel: Record<NotifyPermission, string> = {
     unsupported: '浏览器不支持',
@@ -195,6 +225,32 @@ export function SettingsScreen() {
             onClick={() => push('integration')}
             chevron
           />
+        </Group>
+
+        {/* ── 声音提示 ── */}
+        <Group title="声音">
+          <Row
+            label="声音总开关"
+            value={sfx.sfxMaster ? '已开启' : '全部静音'}
+            onClick={() => {
+              unlockSfx()
+              setSfx('sfxMaster', !sfx.sfxMaster)
+            }}
+            chevron
+          />
+          {soundRows.map((r) => (
+            <Row
+              key={r.key}
+              label={r.label}
+              value={!sfx.sfxMaster ? '总开关已关' : sfx[r.key] ? '已开启' : '已关闭'}
+              onClick={() => toggleSfx(r.key, r.preview)}
+              chevron
+            />
+          ))}
+          <p className="px-3 py-2.5 text-[11px] leading-relaxed text-ink-faint">
+            点一下开 / 关；开启时会顺手放一小段让你试听。浏览器要求先点过页面才允许出声，
+            所以第一次可能听不到，再点一次就好。
+          </p>
         </Group>
 
         {/* ── 消息提醒 ── */}

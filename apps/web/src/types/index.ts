@@ -374,7 +374,7 @@ export interface DoodlePayload {
 export type TrackSource =
   | { kind: 'local'; blobKey: string; mime?: string; size?: number }
   | { kind: 'url'; url: string }
-  | { kind: 'netease'; songId: string }
+  | { kind: 'netease'; songId: string; /** 代理音频流；旧记录没有就退回官方外链播放器 */ streamUrl?: string; /** 代理/镜像失败时的官方直链 */ fallbackUrl?: string }
   | { kind: 'title' }
 
 export interface Track {
@@ -387,7 +387,7 @@ export interface Track {
   /** 谁加的 */
   addedBy: 'me' | 'him'
   addedAt: string
-  /** 真的播出来的秒数（累计；网易云的曲目无法拿到进度，不计） */
+  /** 真的播出来的秒数（累计；代理音频流也算真播放） */
   playedSec?: number
   /** 他在这首上说过的话（说过就不再重复） */
   hisNote?: string

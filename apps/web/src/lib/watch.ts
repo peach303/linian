@@ -6,7 +6,7 @@ import type { WatchItem, WatchSourceKind } from '@/types'
  * 四种来源，各播各的（跟音乐一样的老实话）：
  *  - `local`    本机视频文件 → `<video>` 真播，进度 / 时长都在我们手里
  *  - `url`      视频直链 → 同上
- *  - `bilibili` B 站链接 → 用**官方 iframe 播放器**嵌进来播；进度我们拿不到，所以不计「一起看了多久」
+ *  - `bilibili` B 站链接 → 用**官方 iframe 播放器**嵌进来播；播放进度我们拿不到，所以不显示假进度，\n *    但会按「在房间里待着的真实时间」累计一起看了多久
  *  - `title`    只有片名（他随口推的）→ 播不了就直说
  *
  * B 站没有给第三方拿播放进度的公开接口，跨域我们也读不到 iframe 里的 `currentTime` ——

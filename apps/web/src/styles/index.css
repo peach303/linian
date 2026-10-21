@@ -106,6 +106,28 @@ input[type='range']:disabled::-moz-range-thumb {
   display: none;
 }
 
+/* 尾巴跟着气泡自己的底色 / 背景走。
+   以前这里留的是 Tailwind 的纯色 border，换成自定义气泡（渐变、图片、深色）后
+   就会露出一块白边。现在把三角改成「继承背景的 clip-path」，不再画边框。 */
+.ln-bubble-tail::before,
+.ln-bubble-tail::after {
+  position: absolute !important;
+  top: 11px !important;
+  width: 6px !important;
+  height: 10px !important;
+  background: inherit !important;
+  border: 0 !important;
+  content: '' !important;
+}
+.ln-bubble-tail.ln-bubble-me::after {
+  right: -5px !important;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.ln-bubble-tail.ln-bubble-peer::before {
+  left: -5px !important;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
 /* ── 语音气泡：播放时那三根小柱子的跳动（`VoiceBubble` 用内联 animation 引用） ── */
 @keyframes voice-wave {
   0%,

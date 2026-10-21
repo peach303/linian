@@ -37,7 +37,7 @@ interface CardsState {
   toggle: (id: string) => void
   setWeight: (id: string, weight: number) => void
   /** 导入：批量新增（文字类） */
-  addMany: (items: { text: string; type: CardLibType; category?: string }[]) => number
+  addMany: (items: { text?: string; mediaUrl?: string; type: CardLibType; category?: string }[]) => number
   updateMany: (ids: string[], patch: Partial<Card>) => void
   removeMany: (ids: string[]) => void
   /** 恢复系统预设（保留自定义与拾取） */
@@ -80,7 +80,13 @@ export const useCardsStore = create<CardsState>((setState, get) => {
     closeEdit: () => setState({ editOpen: false, editing: null }),
     setImportOpen: (importOpen) => setState({ importOpen }),
 
-    hydrate: (cards, version) => setState({ cards, version, hydrated: true }),
+    hydrate: (cards, version) =>
+      setState({
+        // 旧版媒体卡只哈希了 dataURL 前缀，这里统一按完整内容重算一次
+        cards: cards.map((c) => ({ ...c, hash: cardHash(c) })),
+        version,
+        hydrated: true,
+      }),
 
     /**
      * 首次启动：把预设卡落库（id 才稳定，也能同步给后端）。
@@ -97,7 +103,11 @@ export const useCardsStore = create<CardsState>((setState, get) => {
         const remote = await pullCards()
         if (get().version > 0) return // 等远端这段时间里已经同步落地了
         if (remote?.cards.length) {
-          setState({ cards: remote.cards, version: remote.version, hydrated: true })
+          setState({
+            cards: remote.cards.map((c) => ({ ...c, hash: cardHash(c) })),
+            version: remote.version,
+            hydrated: true,
+          })
           return
         }
       }
@@ -123,6 +133,7 @@ export const useCardsStore = create<CardsState>((setState, get) => {
           type: it.type,
           source: 'CUSTOM',
           text: it.text,
+          mediaUrl: it.mediaUrl,
           category: it.category,
           tags: it.category ? [it.category] : [],
           noFreeSentence: false,

@@ -6,6 +6,7 @@ import { nid } from '@/lib/ids'
 import { makeCallAfter, makeCallBye } from './content'
 import { pushHisMessage } from './timeline'
 import { seededHit, seededRange } from './seed'
+import { inQuietHours } from './proactive'
 import type { CallOutcome, CallPayload, Message } from '@/types'
 
 /**
@@ -120,6 +121,121 @@ export function startOutgoingCall(): Message | null {
   return msg
 }
 
+/**
+ * 他打给我：一条「来电」消息 + 响铃。
+ * 不抽接不接——接不接由我点；超时没接才记成未接。
+ */
+export function startIncomingCall(): Message | null {
+  const chat = useChatStore.getState()
+  const { conversation } = chat
+  if (!conversation) return null
+  if (useCallStore.getState().live) return null
+  clearTimers()
+
+  const c = useRulesStore.getState().saved.call
+  const id = nid('call')
+  const calledAt = new Date().toISOString()
+  const dream = useAppStore.getState().dream
+  const msg: Message = {
+    id,
+    conversationId: conversation.id,
+    senderId: dream.id,
+    kind: 'CALL_EVENT',
+    status: 'SENT',
+    text: '语音通话',
+    payload: { direction: 'in', phase: 'CALLING', calledAt } satisfies CallPayload,
+    createdAt: calledAt,
+  }
+  chat.pushMessage(msg)
+  useCallStore.getState().begin(id)
+
+  // 响铃超时：他没等到我接，就自己挂了
+  after(Math.max(5000, c.ringTimeoutSec * 1000), () => {
+    if (useCallStore.getState().live?.messageId !== id) return
+    patch(id, {
+      direction: 'in',
+      phase: 'MISSED',
+      outcome: 'miss',
+      calledAt,
+      endedAt: new Date().toISOString(),
+    })
+    useCallStore.getState().end()
+    clearTimers()
+  })
+
+  return msg
+}
+
+/** 我按了「接听」（只对来电有效） */
+export function answerIncomingCall() {
+  const live = useCallStore.getState().live
+  if (!live || live.phase !== 'CALLING') return
+  const chat = useChatStore.getState()
+  const msg = chat.messages.find((m) => m.id === live.messageId)
+  const p = (msg?.payload ?? {}) as unknown as CallPayload
+  if (p.direction !== 'in') return
+
+  const c = useRulesStore.getState().saved.call
+  const id = live.messageId
+  const calledAt = p.calledAt ?? new Date().toISOString()
+  const answeredAt = new Date().toISOString()
+  patch(id, { ...p, direction: 'in', phase: 'TALKING', calledAt, answeredAt })
+  useCallStore.getState().answer()
+  // 接听之后就不要再响铃超时了
+  clearTimers()
+
+  const talkSec = Math.round(
+    seededRange(`call-dur:${id}`, [45, Math.max(60, c.maxDurationMin * 60)]),
+  )
+  const hangupFirst = seededHit(`call-hang:${id}`, Math.max(0, Math.min(1, c.hangup.p)))
+  const endSec = hangupFirst
+    ? Math.max(5, Math.round(talkSec * seededRange(`call-hang-at:${id}`, [0.25, 0.7])))
+    : talkSec
+
+  after(endSec * 1000, () => {
+    if (useCallStore.getState().live?.messageId !== id) return
+    finishCall(id, endSec, hangupFirst ? 'hangup' : undefined)
+  })
+}
+
+/**
+ * 主动来电的定时器：默认很克制（受规则里的「主动来电」概率和冷却约束），
+ * 只在页面可见、没有正在通话、且不在安静时段时才会真的响。
+ */
+let incomingTimer: ReturnType<typeof setInterval> | null = null
+let nextIncomingAt = 0
+
+export function attachIncomingCallEngine() {
+  if (incomingTimer) return
+  nextIncomingAt = Date.now() + (8 + Math.random() * 12) * 60_000
+  incomingTimer = setInterval(() => {
+    if (Date.now() < nextIncomingAt) return
+    nextIncomingAt = Date.now() + (10 + Math.random() * 20) * 60_000
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    if (useCallStore.getState().live) return
+
+    const rules = useRulesStore.getState().saved
+    const c = rules.call
+    if (!c.outgoing.enabled || c.outgoing.p <= 0) return
+    if (inQuietHours(rules.proactive.message.quietHours, new Date())) return
+
+    // 冷却：上一次来电还没过够时间就不再打
+    const lastIn = [...useChatStore.getState().messages]
+      .reverse()
+      .find((m) => {
+        if (m.kind !== 'CALL_EVENT') return false
+        return ((m.payload ?? {}) as unknown as CallPayload).direction === 'in'
+      })
+    if (lastIn && Date.now() - +new Date(lastIn.createdAt) < Math.max(0, c.outgoing.cooldownMin) * 60_000) {
+      return
+    }
+
+    // 规则里的概率按「每次检查」再放大一点点，让默认值大约几小时来一次
+    if (!seededHit(`incoming-call:${Date.now().toString(36)}`, Math.min(0.5, c.outgoing.p * 2))) return
+    startIncomingCall()
+  }, 10 * 60_000)
+}
+
 /** 收尾：补上时长并落一条「通话时长 mm:ss」 */
 export function finishCall(id: string, durationSec: number, outcome?: CallOutcome) {
   const chat = useChatStore.getState()
@@ -154,7 +270,13 @@ export function hangupCall() {
     // 还没接通就挂掉 → 记成取消（未接的一种）
     const msg = useChatStore.getState().messages.find((m) => m.id === messageId)
     const p = (msg?.payload ?? {}) as unknown as CallPayload
-    patch(messageId, { ...p, phase: 'MISSED', outcome: 'miss', endedAt: new Date().toISOString() })
+    patch(messageId, {
+      ...p,
+      phase: 'MISSED',
+      // 我拒接他的来电，和「他没接我」不是一件事
+      outcome: p.direction === 'in' ? 'reject' : 'miss',
+      endedAt: new Date().toISOString(),
+    })
     useCallStore.getState().end()
     clearTimers()
     return
@@ -174,8 +296,15 @@ export function finalizeStaleCalls() {
     if (p.phase !== 'CALLING' && p.phase !== 'TALKING') continue
     const from = p.answeredAt ? +new Date(p.answeredAt) : +new Date(p.calledAt)
     const sec = Math.max(0, Math.round((Date.now() - from) / 1000))
+    const missed = p.direction === 'in' && p.phase === 'CALLING'
     patchMessage(m.id, {
-      payload: { ...p, phase: 'ENDED', durationSec: sec, endedAt: new Date().toISOString() },
+      payload: {
+        ...p,
+        phase: missed ? 'MISSED' : 'ENDED',
+        outcome: missed ? 'miss' : p.outcome,
+        durationSec: missed ? undefined : sec,
+        endedAt: new Date().toISOString(),
+      },
     })
   }
   useCallStore.getState().end()
@@ -190,9 +319,13 @@ export const formatClock = (sec: number) => {
 
 /** 通话记录里显示的那句（引擎页 / 气泡共用） */
 export function callSummary(p: CallPayload): string {
-  if (p.phase === 'CALLING') return '正在呼叫…'
+  if (p.phase === 'CALLING') return p.direction === 'in' ? '来电中…' : '正在呼叫…'
   if (p.phase === 'TALKING') return '通话中'
   if (p.phase === 'MISSED') {
+    if (p.direction === 'in') {
+      if (p.outcome === 'reject') return '已拒绝'
+      return '未接来电'
+    }
     if (p.outcome === 'busy') return '对方忙线'
     if (p.outcome === 'reject') return '对方已拒绝'
     return p.durationSec ? '通话结束' : '对方无应答'

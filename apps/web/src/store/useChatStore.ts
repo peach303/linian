@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { Conversation, DoodlePayload, ExtendAction, GiftItem, Message, QuestionAnswerRow, QuestionItem, RedPacketPayload } from '@/types'
+import type { Conversation, DoodlePayload, ExtendAction, GiftItem, Message, QuestionAnswerRow, QuestionItem, RedPacketPayload, Track } from '@/types'
 import { MOCK_CONVERSATION, MOCK_MESSAGES } from '@/mock/chat'
 import { myPatLine } from '@/lib/pats'
+import { neteaseFallbackUrl, neteaseSongId, neteaseStreamUrl, newTrackId, resolveNetease, songLabel } from '@/lib/music'
 import { appendMessage, markSent, recallMessage as repoRecall } from '@/lib/repo'
 import { notifyPeerMessage } from '@/lib/notify'
 import { useAppStore } from '@/store/useAppStore'
@@ -82,6 +83,52 @@ const now = () => new Date().toISOString()
 const newId = () =>
   `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
+/**
+ * 把直接粘进输入框的网易云分享链接变成一张歌卡，而不是把几百字链接原样发出去。
+ * 先落到本地歌单，再发 MUSIC_INVITE；解析不到歌名也仍然能按 id 播。
+ */
+async function shareNeteaseLink(raw: string, songId: string) {
+  const info = await resolveNetease(raw)
+  const title = info?.title?.trim() || `网易云歌曲 ${songId}`
+  const artist = info?.artist?.trim() || '网易云音乐'
+  const cover = info?.cover || '🎧'
+  const store = useAppStore.getState()
+  const existing = store.room.tracks.find(
+    (t) => t.source.kind === 'netease' && t.source.songId === songId,
+  )
+  const track: Track =
+    existing ?? {
+      id: newTrackId(),
+      title,
+      artist,
+      cover,
+      source: {
+        kind: 'netease',
+        songId,
+        streamUrl: neteaseStreamUrl(songId),
+        fallbackUrl: neteaseFallbackUrl(songId),
+      },
+      addedBy: 'me',
+      addedAt: now(),
+    }
+  if (!existing) store.addRoomTracks([track])
+
+  const chat = useChatStore.getState()
+  const conversation = chat.conversation
+  if (!conversation) return
+  const msg: Message = {
+    id: newId(),
+    conversationId: conversation.id,
+    senderId: conversation.me.id,
+    kind: 'MUSIC_INVITE',
+    status: 'SENT',
+    text: songLabel({ title, artist }),
+    payload: { title, artist, cover, trackId: track.id, from: 'me' },
+    createdAt: now(),
+  }
+  chat.pushMessage(msg)
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   conversation: MOCK_CONVERSATION,
   messages: MOCK_MESSAGES,
@@ -103,6 +150,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { draft, conversation, quoteOf } = get()
     const text = draft.trim()
     if (!text || !conversation) return
+
+    // 直接贴网易云分享链接 / 歌曲 id：转成歌卡，别把超长链接铺在聊天里
+    const songId = neteaseSongId(text)
+    if (songId) {
+      set({ draft: '', quoteOf: undefined })
+      void shareNeteaseLink(text, songId)
+      return
+    }
+
     const msg: Message = {
       id: newId(),
       conversationId: conversation.id,

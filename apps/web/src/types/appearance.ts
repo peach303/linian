@@ -61,7 +61,7 @@ export interface HomePhoto {
 }
 
 export const DEFAULT_APPEARANCE: Appearance = {
-  appIcon: { mode: 'emoji', value: '🫧' },
+  appIcon: { mode: 'image', value: 'icons/snow-192.png' },
   homeBackground: { mode: 'preset', value: 'linian-blue', blur: 0, dim: 0 },
   frame: { mode: 'emoji', value: '🖼️' },
   homeNote: '两颗缠绕的心，会走同一条路',

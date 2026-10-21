@@ -2,7 +2,7 @@
 /**
  * 黎念 · 免费代理（Deno Deploy）
  *
- * 只做四件事：MiniMax 语音、博查联网搜索、图片转发、网易云元信息。
+ * 只做五件事：MiniMax 语音、博查联网搜索、图片转发、网易云元信息、网易云公开音频流。
  * 聊天记录、字卡、日记都不经过这里；Key 只放在 Deno KV / 环境变量里。
  */
 import { corsHeaders, json, preflight, readJson } from './lib/cors.js'
@@ -10,7 +10,7 @@ import { readConfig, saveConfig, statusOf, verifyAdmin } from './lib/config.js'
 import { bochaSearch } from './lib/bocha.js'
 import { buildMedia, detectVideo } from './lib/media.js'
 import { minimaxTts } from './lib/minimax.js'
-import { resolveNetease } from './lib/netease.js'
+import { resolveNetease, proxyNeteaseAudio } from './lib/netease.js'
 import { imgProxyPath, proxyImage, unb64u } from './lib/image.js'
 
 const VERSION = '1.0.0'
@@ -38,7 +38,8 @@ async function handle(req) {
         'POST /api/v1/voice/tts\n' +
         'POST /api/v1/search\n' +
         'GET  /api/v1/image?u=...&ref=...\n' +
-        'GET  /api/v1/music/resolve?input=...\n',
+        'GET  /api/v1/music/resolve?input=...\n' +
+        'GET  /api/v1/music/audio?id=...\n',
     )
   }
 
@@ -197,6 +198,47 @@ async function handle(req) {
         ...corsHeaders(req),
       },
     })
+  }
+
+  /* ── 网易云公开音频流（应用内播放） ── */
+  if (path === '/api/v1/music/audio' && req.method === 'GET') {
+    const id = String(url.searchParams.get('id') ?? '').trim()
+    if (!/^\d{4,}$/.test(id)) return json(req, { error: 'BAD_SONG_ID' }, 400)
+
+    /*
+     * 默认 302 到公开镜像：镜像会再跳到网易云 CDN，音频由浏览器直接取。
+     *
+     * 为什么不在这里把字节转发一遍：
+     * Deno Deploy 的机房访问网易云/国内镜像很慢，整首 10MB+ 会触发
+     * DEPLOYMENT_TIMED_OUT；302 只是让浏览器和 CDN 直接谈 Range，
+     * 首字节快，seek 也正常。链接仍然是应用内的 <audio>，不会跳网页。
+     *
+     * 需要同源转发（例如排查问题）时加 `?stream=1`。
+     */
+    if (url.searchParams.get('stream') !== '1') {
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: `https://api.injahow.cn/meting/?type=url&id=${encodeURIComponent(id)}`,
+          'Cache-Control': 'no-store',
+          ...corsHeaders(req),
+        },
+      })
+    }
+
+    const got = await proxyNeteaseAudio(id, req.headers.get('range'))
+    if (!got.ok) {
+      return json(req, { error: got.error, detail: got.detail }, got.status || 404)
+    }
+    const headers = {
+      'Content-Type': got.type,
+      'Cache-Control': 'no-store',
+      'Accept-Ranges': got.acceptRanges,
+      ...corsHeaders(req),
+    }
+    if (got.length) headers['Content-Length'] = got.length
+    if (got.contentRange) headers['Content-Range'] = got.contentRange
+    return new Response(got.body, { status: got.status, headers })
   }
 
   /* ── 网易云元信息 ── */

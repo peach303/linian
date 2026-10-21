@@ -29,14 +29,36 @@ export function CardLibraryScreen() {
   const push = useAppStore((s) => s.push)
   const [manage, setManage] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
+  const [cat, setCat] = useState('ALL')
+  const [bulkCat, setBulkCat] = useState('')
 
   const { ratios, typeCount, rate, poolOf } = useMemo(() => cardRates(st.cards, weights), [st.cards, weights])
   const pools = normalizeWeights(weights)
+
+  const categories = Array.from(
+    new Set(
+      st.cards
+        .filter((c) => st.source === 'ALL' || c.source === st.source)
+        .filter((c) => st.type === 'ALL' || c.type === st.type)
+        .map((c) => (c.category ?? '').trim())
+        .filter(Boolean),
+    ),
+  )
+
+  /** 分组 chip 的计数也只看当前来源 / 类型，别让数字和下面的列表对不上 */
+  const categoryCount = (label: string) =>
+    st.cards.filter(
+      (c) =>
+        (st.source === 'ALL' || c.source === st.source) &&
+        (st.type === 'ALL' || c.type === st.type) &&
+        (c.category ?? '') === label,
+    ).length
 
   const filtered = st.cards.filter(
     (c) =>
       (st.source === 'ALL' || c.source === st.source) &&
       (st.type === 'ALL' || c.type === st.type) &&
+      (cat === 'ALL' || (c.category ?? '') === cat) &&
       (!st.q ||
         (c.text ?? '').toLowerCase().includes(st.q.toLowerCase()) ||
         (c.category ?? '').includes(st.q) ||
@@ -121,6 +143,7 @@ export function CardLibraryScreen() {
               onClick={() => {
                 st.setSource(t.key)
                 setSelected([])
+                setCat('ALL')
               }}
               className={clsx(
                 'tap shrink-0 rounded-full px-3 py-1.5 text-[13px] shadow-card',
@@ -154,7 +177,10 @@ export function CardLibraryScreen() {
             {TYPE_META.map((t) => (
               <button
                 key={t.key}
-                onClick={() => st.setType(t.key)}
+                onClick={() => {
+                  st.setType(t.key)
+                  setCat('ALL')
+                }}
                 className={clsx(
                   'tap shrink-0 rounded-full px-2.5 py-1 text-[12px] ring-1',
                   st.type === t.key ? 'bg-brand/15 text-brand-deep ring-brand' : 'bg-page text-ink-sub ring-hairline',
@@ -165,6 +191,35 @@ export function CardLibraryScreen() {
               </button>
             ))}
           </div>
+
+          {/* 分组：表情包 / 图片也可以按「分组」收起来 */}
+          {categories.length > 0 && (
+            <div className="no-scrollbar mt-2 flex items-center gap-1.5 overflow-x-auto">
+              <span className="shrink-0 text-[11px] text-ink-faint">分组</span>
+              <button
+                onClick={() => setCat('ALL')}
+                className={clsx(
+                  'tap shrink-0 rounded-full px-2.5 py-1 text-[12px] ring-1',
+                  cat === 'ALL' ? 'bg-brand text-white ring-brand' : 'bg-page text-ink-sub ring-hairline',
+                )}
+              >
+                全部
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCat(c)}
+                  className={clsx(
+                    'tap shrink-0 rounded-full px-2.5 py-1 text-[12px] ring-1',
+                    cat === c ? 'bg-brand text-white ring-brand' : 'bg-page text-ink-sub ring-hairline',
+                  )}
+                >
+                  {c}
+                  <span className="ml-1 opacity-60">{categoryCount(c)}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ── 列表（按类型分组） ── */}
@@ -187,20 +242,30 @@ export function CardLibraryScreen() {
                     : '这一类还没有字卡'}
               </div>
             ) : (
-              <ul className="divide-y divide-hairline overflow-hidden rounded-xl bg-surface shadow-card">
-                {g.items.map((c) => (
-                  <CardRow
-                    key={c.id}
-                    card={c}
-                    hit={rate(c).hit}
-                    within={rate(c).within}
-                    manage={manage}
-                    selected={selected.includes(c.id)}
-                    onSelect={() => toggleSelect(c.id)}
-                    onOpen={() => st.openEdit(c)}
-                  />
-                ))}
-              </ul>
+              groupByCategory(g.items).map(([label, items]) => (
+                <div key={label} className="mb-2 last:mb-0">
+                  {cat === 'ALL' && (
+                    <div className="mb-1 flex items-center gap-1.5 px-1 text-[11px] text-ink-faint">
+                      <span className="rounded-full bg-surface px-2 py-0.5 ring-1 ring-hairline">{label}</span>
+                      <span>{items.length} 张</span>
+                    </div>
+                  )}
+                  <ul className="divide-y divide-hairline overflow-hidden rounded-xl bg-surface shadow-card">
+                    {items.map((c) => (
+                      <CardRow
+                        key={c.id}
+                        card={c}
+                        hit={rate(c).hit}
+                        within={rate(c).within}
+                        manage={manage}
+                        selected={selected.includes(c.id)}
+                        onSelect={() => toggleSelect(c.id)}
+                        onOpen={() => st.openEdit(c)}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              ))
             )}
           </section>
         ))}
@@ -260,6 +325,24 @@ export function CardLibraryScreen() {
               删除
             </button>
           </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            <input
+              value={bulkCat}
+              onChange={(e) => setBulkCat(e.target.value)}
+              placeholder="给选中的卡设分组，如：表情包"
+              className="min-w-0 flex-1 rounded-lg bg-page px-2.5 py-1.5 text-[12px] text-ink outline-none ring-1 ring-hairline focus:ring-brand placeholder:text-ink-faint"
+            />
+            <button
+              className="tap shrink-0 rounded-lg bg-brand px-3 py-1.5 text-[12px] text-white disabled:opacity-40"
+              disabled={!selected.length || !bulkCat.trim()}
+              onClick={() => {
+                st.updateMany(selected, { category: bulkCat.trim() })
+                setBulkCat('')
+              }}
+            >
+              设分组
+            </button>
+          </div>
         </div>
       )}
 
@@ -270,6 +353,15 @@ export function CardLibraryScreen() {
 }
 
 /* ───────────────────────── 单行 ───────────────────────── */
+
+function groupByCategory(items: Card[]): [string, Card[]][] {
+  const map = new Map<string, Card[]>()
+  for (const c of items) {
+    const key = (c.category ?? '').trim() || '未分组'
+    map.set(key, [...(map.get(key) ?? []), c])
+  }
+  return [...map.entries()].sort(([a], [b]) => (a === '未分组' ? 1 : b === '未分组' ? -1 : a.localeCompare(b)))
+}
 
 function CardRow({
   card,
@@ -312,7 +404,11 @@ function CardRow({
           style={{ background: `${meta.color}22` }}
         >
           {isMediaCard && card.mediaUrl ? (
-            <img src={card.mediaUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={card.mediaUrl}
+              alt=""
+              className={clsx('h-full w-full', card.type === 'STICKER' ? 'object-contain' : 'object-cover')}
+            />
           ) : (
             meta.icon
           )}

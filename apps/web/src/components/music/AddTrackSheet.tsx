@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { hasIDB } from '@/lib/db'
-import { neteaseSongId, newTrackId, resolveNetease, titleFromFileName } from '@/lib/music'
+import { neteaseFallbackUrl, neteaseSongId, neteaseStreamUrl, newTrackId, resolveNetease, titleFromFileName } from '@/lib/music'
 import { saveAudioFile } from '@/lib/repo'
 import { useAppStore } from '@/store/useAppStore'
 import type { Track } from '@/types'
@@ -13,7 +13,7 @@ type Tab = 'local' | 'url' | 'netease'
  *
  *  · 本机文件 → Blob 存进 IndexedDB（**只在这台设备上**），`<audio>` 真播
  *  · 音频直链 → 任何能直接播的 http(s) 音频地址
- *  · 网易云   → 贴分享链接 / 歌曲 id，用**官方外链播放器**播（VIP / 地区受限时只能试听）
+ *  · 网易云   → 贴分享链接 / 歌曲 id，走代理音频流在应用内播（VIP / 地区受限时可能只能试听或播不了）
  */
 export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdded: (id: string) => void }) {
   const addRoomTracks = useAppStore((s) => s.addRoomTracks)
@@ -112,7 +112,7 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
       setResolved({ songId: id, title: '', artist: '' })
       setNTitle('')
       setNAritst('')
-      setNote('没连上后端，解析不到歌名 —— 播放没问题，把歌名歌手补一下就行。')
+      setNote('没连上解析服务，不过这首歌会走代理音频流播放；把歌名歌手补一下就行。')
       return
     }
     setNote('认不出歌曲 id：可以贴「分享」出来的整段文字，或者 music.163.com/song?id=xxx 这样的链接。')
@@ -127,7 +127,12 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
         title: nTitle.trim() || `网易云歌曲 ${resolved.songId}`,
         artist: nArtist.trim() || '网易云音乐',
         cover: resolved.cover || '🎧',
-        source: { kind: 'netease', songId: resolved.songId },
+        source: {
+          kind: 'netease',
+          songId: resolved.songId,
+          streamUrl: neteaseStreamUrl(resolved.songId),
+          fallbackUrl: neteaseFallbackUrl(resolved.songId),
+        },
         addedBy: 'me',
         addedAt: new Date().toISOString(),
       },
@@ -256,8 +261,8 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
             )}
 
             <p className="text-[11px] leading-relaxed text-ink-faint">
-              这首用网易云官方外链播放器嵌进来播 —— 版权在网易云手上，能不能放、放到哪（VIP / 地区受限时会只给试听）
-              都由它决定，我们这边不接管它的进度、也不把它的时长算进「一起听了多久」。
+              会通过我们自己的代理取网易云的公开音频流，在应用里直接播；进度和「一起听了多久」都能算。
+              版权 / VIP / 地区受限的曲子仍然可能只给试听或直接播不了，那时播放器会明说，不会假装在放。
             </p>
           </div>
         )}

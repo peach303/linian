@@ -460,7 +460,8 @@ APP_PASSWORD=你自己想的一串 npm start
 | `GET` `POST` | `/api/v1/conversations/:id/messages` | 聊天记录（POST 按 id 幂等 upsert） |
 | `DELETE` | `/api/v1/conversations/:id/messages` | 清空该会话（「设置 → 清空聊天记录」会连后端一起清，否则下次启动又会并回来） |
 | `POST` | `/api/v1/messages/:id/recall` | 撤回 |
-| `GET` | `/api/v1/music/resolve?input=…` | 网易云分享链接 / 歌曲 id → `{ songId, title, artist, cover }`（**只有元信息**，音频不经过后端；短链 163cn.tv 会在服务端跟跳转） |
+| `GET` | `/api/v1/music/resolve?input=…` | 网易云分享链接 / 歌曲 id → `{ songId, title, artist, cover }`（短链 163cn.tv 会在服务端跟跳转） |
+| `GET` | `/api/v1/music/audio?id=…` | 网易云公开音频：默认 302 到音频 CDN，浏览器 `<audio>` 直接播放并支持 Range；`?stream=1` 走同源转发 |
 | `GET` `PUT` | `/api/v1/integrations` | 接入状态 / 写入 Key。**GET 只回「配没配 + Key 尾号」**，明文永远不出后端 |
 | `POST` | `/api/v1/voice/tts` | MiniMax 语音合成代理（`{ text, voiceId?, model?, speed?, emotion? }` → `audio/mpeg` 字节；响应头带 `X-Audio-Duration-Ms`） |
 | `POST` | `/api/v1/search` | 联网搜索代理（`{ query, count?, freshness?, enrich? }`）。`enrich: true` 顺带给首条备素材 → 回 `media: { video, pics[] }`；**搜不到就回 `ok:false` + 原因，绝不编一条** |
@@ -683,11 +684,11 @@ APP_PASSWORD=你自己想的一串 npm start
 | --- | --- | --- |
 | 本机音频文件 | `lib/audio.ts` 的 `<audio>` 真播 | mp3 / flac / m4a / wav…，文件以 **Blob 存在 IndexedDB**（只在这台设备上，**不上传服务器**；换设备 / 清浏览器数据要重新导入） |
 | 音频直链 | 同上 | 任何能直接播的 `http(s)` 音频地址；需要登录 / 有防盗链的会播不出来，界面上会**直接说**，不会假装在放 |
-| 网易云 | **官方外链播放器**（`music.163.com/outchain/player` 的 iframe） | 贴分享链接 / 歌曲 id，后端（`GET /api/v1/music/resolve`）只解析歌名·歌手·封面；**版权和播放都在网易云那边**，VIP / 地区受限时它只给试听，我们不接管它的进度 |
+| 网易云 | `lib/audio.ts` 的 `<audio>` 真播（`/api/v1/music/audio` 默认 302 到音频 CDN） | 贴分享链接 / 歌曲 id，后端解析歌名·歌手·封面，并把歌加入本机歌单；播放、进度和「一起听了多久」都由应用内播放器接管，不跳网易云页面。VIP / 地区受限时可能只给试听或播不了，界面会直接提示 |
 
 进度条、时长、音量、拖动 seek、上一首 / 下一首、单曲 / 顺序循环都是真的；
 顶上是「我和他」的头像和状态，**「一起听了多久」= `<audio>` 真的走出来的秒数**（`state.musicRoom.playedSec`，每 10 秒落一次盘）——
-网易云曲目和只有歌名的曲目不计数，Hub 上的数字也从这里来，不再把「他答应加入了」当成听过。
+只有歌名、没有音频地址的曲目不计数，Hub 上的数字也从这里来，不再把「他答应加入了」当成听过。
 
 房间里他会自己待着：进来（`music.join`）、在歌放到 20%~40% 时说一句（`music.say`）、
 50%~80% 时往歌单加一首（`music.shareBack`）、待够 `music.listenMin` 分钟后说一句「先去忙了」——

@@ -40,9 +40,14 @@ export const VOICES: VoicePreset[] = [
 export const voiceName = (id?: string) => VOICES.find((v) => v.id === id)?.name ?? id ?? '默认音色'
 
 export const MODELS = [
-  { id: 'speech-02-hd', name: 'speech-02-hd（高保真，贵一点）' },
-  { id: 'speech-02-turbo', name: 'speech-02-turbo（快，便宜）' },
-  { id: 'speech-01-turbo', name: 'speech-01-turbo（老模型，最便宜）' },
+  { id: 'speech-2.8-hd', name: 'speech-2.8-hd（最新 · 高保真）' },
+  { id: 'speech-2.8-turbo', name: 'speech-2.8-turbo（最新 · 快）' },
+  { id: 'speech-2.6-hd', name: 'speech-2.6-hd（高保真）' },
+  { id: 'speech-2.6-turbo', name: 'speech-2.6-turbo（快）' },
+  { id: 'speech-02-hd', name: 'speech-02-hd（2.0 · 高保真）' },
+  { id: 'speech-02-turbo', name: 'speech-02-turbo（2.0 · 快）' },
+  { id: 'speech-01-hd', name: 'speech-01-hd（老模型）' },
+  { id: 'speech-01-turbo', name: 'speech-01-turbo（老模型 · 最便宜）' },
 ]
 
 /** MiniMax 支持的情绪（`voice_setting.emotion`） */
@@ -231,10 +236,10 @@ export const EMPTY_INTEGRATIONS: IntegrationsStatus = {
     source: 'none',
     hint: '',
     groupId: '',
-    model: 'speech-02-hd',
+    model: 'speech-2.8-hd',
     voiceId: 'male-qn-qingse',
     speed: 1,
-    defaults: { model: 'speech-02-hd', voiceId: 'male-qn-qingse', speed: 1 },
+    defaults: { model: 'speech-2.8-hd', voiceId: 'male-qn-qingse', speed: 1 },
   },
   search: {
     configured: false,
