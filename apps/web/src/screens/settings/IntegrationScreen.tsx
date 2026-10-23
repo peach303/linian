@@ -2,7 +2,9 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
 import { MusicAccountCard } from '@/components/settings/MusicAccountCard'
+import { RuleField } from '@/components/settings/controls'
 import { API_ENABLED, PROXY_MODE } from '@/lib/deploy'
+import { getAtPath, RULE_GROUPS } from '@/lib/rules'
 import { pushNow } from '@/lib/engine/search'
 import { searchReason, searchWeb, type SearchResult } from '@/lib/search'
 import { fromNow } from '@/lib/time'
@@ -25,6 +27,9 @@ import { useRulesStore } from '@/store/useRulesStore'
 
 const SAMPLE = '你听，这是我自己说的，不是字卡拼出来的。'
 
+/** 搜索关键词沿用概率引擎的字段元数据，保证两边是同一份定义 */
+const TOPICS_FIELD = RULE_GROUPS.flatMap((g) => g.fields).find((f) => f.path === 'search.topics')
+
 /** 博查的时效过滤（值要和上游一致） */
 const FRESHNESS: { id: string; label: string }[] = [
   { id: 'oneDay', label: '一天内' },
@@ -37,6 +42,7 @@ const FRESHNESS: { id: string; label: string }[] = [
 export function IntegrationScreen() {
   const { status, loaded, reachable, saving, note, refresh, save } = useIntegrationsStore()
   const rules = useRulesStore((s) => s.saved)
+  const draftRules = useRulesStore((s) => s.draft)
   const updateRule = useRulesStore((s) => s.update)
   const saveRules = useRulesStore((s) => s.save)
   const push = useAppStore((s) => s.push)
@@ -149,6 +155,8 @@ export function IntegrationScreen() {
 
   const doSaveSearch = async () => {
     setSearchNote(null)
+    /** 关键词改在本地 rules 草稿里；这里和接口设置一起落盘 */
+    await saveRules()
     const ok = await save({
       adminPassword: admin,
       // 留空 = 不改（避免「只想换时效」却把 Key 抹掉）
@@ -526,6 +534,21 @@ export function IntegrationScreen() {
               ))}
             </select>
           </Field>
+
+          {(rules.search.enabled || draftRules.search.enabled) && TOPICS_FIELD && (
+            <div className="mt-1 border-t border-hairline">
+              <RuleField
+                field={TOPICS_FIELD}
+                value={getAtPath(draftRules, 'search.topics')}
+                onChange={(v) => {
+                  updateRule('search.topics', v)
+                  void saveRules()
+                }}
+                active
+              />
+              <p className="-mt-1 pb-1 text-[11px] leading-relaxed text-ink-faint">加 / 删关键词会自动保存</p>
+            </div>
+          )}
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button
