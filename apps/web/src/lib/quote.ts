@@ -54,8 +54,17 @@ export function quoteRefOf(m: Message): QuoteRef {
 
 /** 引用条上显示的那一行字；图片类优先显示说明，不显示 dataURL */
 export function quoteCaption(q: QuoteRef): string {
-  if (q.thumb) return q.label || (q.kind === 'CARD' ? '图片' : '引用')
-  const text = (q.label || q.text || '').trim()
+  const label = (q.label || '').trim()
+  if (q.thumb) {
+    /** 旧快照可能把整篇摘要 / 文件名塞进 label；有缩略图时只留一小句干净说明 */
+    const clean =
+      label &&
+      label.length <= 60 &&
+      !/^(data:|blob:|https?:\/\/)/i.test(label) &&
+      !/\.(png|jpe?g|gif|webp|avif|bmp)(\?|#|$)/i.test(label)
+    return clean ? label : q.kind === 'CARD' ? '图片' : '引用'
+  }
+  const text = (label || q.text || '').trim()
   /** 旧引用快照没有 thumb 时，text 里可能留着 dataURL / 图片地址 / 文件名：
       不要把它整串显示出来，统一退回「图片 / 引用」。 */
   if (
