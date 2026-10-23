@@ -1,4 +1,5 @@
 import { API_BASE } from '@/lib/deploy'
+import { seededPick } from '@/lib/engine/seed'
 import { getMusicSession } from '@/lib/musicAuth'
 import type { MusicPayload, Track } from '@/types'
 
@@ -15,26 +16,103 @@ import type { MusicPayload, Track } from '@/types'
  * 这时候界面会明说「播不了」，不假装拿到了音频。
  */
 
-export interface Song {
-  id: string
+/** 网易云搜索结果（只认真实搜到的歌，搜不到就是空数组） */
+export interface NeteaseHit {
+  songId: string
   title: string
   artist: string
-  cover: string
+  album?: string
+  cover?: string
+  durationSec?: number
+  quality?: string
 }
 
-/** 他推歌时用的歌单（只是歌名 + 封面，没有播放地址） */
-export const SONGS: Song[] = [
-  { id: 's_1', title: '晚安', artist: '陈粒', cover: '🌙' },
-  { id: 's_2', title: '小半', artist: '陈粒', cover: '🍃' },
-  { id: 's_3', title: '漠河舞厅', artist: '柳爽', cover: '❄️' },
-  { id: 's_4', title: '虹', artist: '手嶌葵', cover: '🌈' },
-  { id: 's_5', title: '告白气球', artist: '周杰伦', cover: '🎈' },
-  { id: 's_6', title: '大鱼', artist: '周深', cover: '🐋' },
-  { id: 's_7', title: 'City of Stars', artist: 'Ryan Gosling', cover: '✨' },
-  { id: 's_8', title: '晴天', artist: '周杰伦', cover: '☀️' },
-]
+const normalizeCover = (raw: unknown) => {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  return /^http:\/\//i.test(s) ? s.replace(/^http:/i, 'https:') : s
+}
 
-export const songById = (id: string) => SONGS.find((s) => s.id === id)
+const secondsFromInterval = (raw: unknown) => {
+  const s = String(raw || '')
+  const mm = s.match(/(\d+)\s*[:：]\s*(\d+)/)
+  if (mm) return Number(mm[1]) * 60 + Number(mm[2])
+  const cn = s.match(/(\d+)\s*分\s*(\d+)?\s*秒?/)
+  if (cn) return Number(cn[1]) * 60 + Number(cn[2] || 0)
+  return undefined
+}
+
+/**
+ * 直接搜网易云（浏览器可用，不经过代理）
+ *
+ * 落月 API 返回的是网易云真实歌曲 id / 歌名 / 歌手 / 封面，CORS 开着；
+ * 代理还活着时会优先用代理的 VIP 音频流，代理挂了也能退回官方公开音源。
+ */
+export async function searchNetease(keyword: string, count = 8): Promise<NeteaseHit[]> {
+  const q = keyword.trim()
+  if (!q) return []
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 12_000)
+  try {
+    const url = `https://api.vkeys.cn/v2/music/netease?word=${encodeURIComponent(q)}&num=${Math.max(1, Math.min(20, count))}&page=1`
+    const res = await fetch(url, { signal: ctrl.signal })
+    const j = (await res.json().catch(() => null)) as { code?: number; data?: unknown } | null
+    if (!j || j.code !== 200 || !Array.isArray(j.data)) return []
+    return j.data
+      .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === 'object'))
+      .map((x) => ({
+        songId: String(x.id ?? ''),
+        title: String(x.song ?? '').trim(),
+        artist: String(x.singer ?? '').trim(),
+        album: String(x.album ?? '').trim() || undefined,
+        cover: normalizeCover(x.cover) || undefined,
+        durationSec: secondsFromInterval(x.interval),
+        quality: String(x.quality ?? '').trim() || undefined,
+      }))
+      .filter((x) => /^\d{4,}$/.test(x.songId) && x.title)
+  } catch {
+    return []
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** 搜索结果 → 房间曲目（真 id、真封面、可播放） */
+export const trackFromNeteaseHit = (hit: NeteaseHit, addedBy: 'me' | 'him' = 'me'): Track => ({
+  id: newTrackId(),
+  title: hit.title,
+  artist: hit.artist || '网易云音乐',
+  cover: hit.cover || '🎧',
+  source: {
+    kind: 'netease',
+    songId: hit.songId,
+    streamUrl: neteaseStreamUrl(hit.songId),
+    fallbackUrl: neteaseFallbackUrl(hit.songId),
+  },
+  addedBy,
+  addedAt: new Date().toISOString(),
+})
+
+/**
+ * 按关键词挑一首真歌：先按种子选一个关键词，搜不到再换下一个。
+ * 返回 null 表示这次真的没搜到 —— 调用方不要发假歌。
+ */
+export async function findNeteaseForKeywords(
+  keywords: string[],
+  seed: string,
+  exclude?: Set<string>,
+  addedBy: 'me' | 'him' = 'him',
+): Promise<Track | null> {
+  const list = keywords.map((s) => s.trim()).filter(Boolean)
+  if (!list.length) return null
+  const first = seededPick(list, `music-kw:${seed}`) ?? list[0]!
+  for (const kw of [first, ...list.filter((x) => x !== first)]) {
+    const hits = (await searchNetease(kw, 10)).filter((h) => !exclude?.has(`${h.title}|${h.artist}`))
+    const hit = seededPick(hits, `music-hit:${seed}:${kw}`)
+    if (hit) return trackFromNeteaseHit(hit, addedBy)
+  }
+  return null
+}
 
 /** 卡片上的那行「歌 - 歌手」 */
 export const songLabel = (m: Pick<MusicPayload, 'title' | 'artist'>) =>
@@ -168,17 +246,6 @@ export async function resolveQQ(input: string): Promise<ResolvedQQSong | null> {
 /* ───────────────────────── 房间里的曲目 ───────────────────────── */
 
 export const newTrackId = () => `t_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
-
-export const trackFromSong = (song: Song, addedBy: 'me' | 'him'): Track => ({
-  id: newTrackId(),
-  title: song.title,
-  artist: song.artist,
-  cover: song.cover,
-  // 他的歌只有歌名（没有播放地址）—— 所以进房间后只显示，不假装能播
-  source: { kind: 'title' },
-  addedBy,
-  addedAt: new Date().toISOString(),
-})
 
 /** 能不能真的出声（本机文件 / 直链 / 代理音频流可以；旧网易云记录交给官方播放器；只有歌名的播不了） */
 export const playableKind = (t: Track): 'audio' | 'netease' | 'none' => {

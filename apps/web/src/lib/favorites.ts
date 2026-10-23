@@ -42,7 +42,7 @@ export const DEFAULT_FAVORITE_REASONS = [
 function kindLabel(kind?: string): string {
   if (kind === 'VOICE') return '一条语音'
   if (kind === 'CARD') return '一张字卡'
-  if (kind === 'SEARCH_PUSH') return '一条推送'
+  if (kind === 'SEARCH_PUSH') return '一条 B 站视频'
   if (kind === 'DOODLE') return '一张涂鸦'
   if (kind === 'IMAGE') return '一张图片'
   if (kind === 'QUESTION') return '一份问卷'

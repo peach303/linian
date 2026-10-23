@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # 每 3 小时刷新一次 B 站片单并重新部署
+  schedule:
+    - cron: '17 */3 * * *'
 
 permissions:
   contents: read
@@ -28,9 +31,13 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Refresh Bilibili feed
+        # 抓不到就保留仓库里上一次的片单，不让部署失败
+        continue-on-error: true
+        run: node scripts/fetch-bilibili-feed.mjs
       - run: npm run build:web:static
         env:
-          # 静态站仍然只把聊天存本机；语音 / 搜索走这个免费代理。
+          # 静态站仍然只把聊天存本机；语音走这个代理，B 站片单读同源静态文件。
           # 如果代理项目名变了，在仓库 Variables 里改 LINIAN_API_BASE 即可。
           VITE_API_BASE: ${{ vars.LINIAN_API_BASE || 'https://linian-proxy.peach303.deno.net/api/v1' }}
       - uses: actions/upload-pages-artifact@v3

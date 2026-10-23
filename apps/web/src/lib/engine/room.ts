@@ -13,7 +13,7 @@
  */
 import { onPlayer, playerState } from '@/lib/audio'
 import { pickCachedLyric, preloadTrackLyrics } from '@/lib/lyrics'
-import { SONGS, trackFromSong } from '@/lib/music'
+import { findNeteaseForKeywords } from '@/lib/music'
 import { nid } from '@/lib/ids'
 import { useAppStore } from '@/store/useAppStore'
 import { useRulesStore } from '@/store/useRulesStore'
@@ -129,14 +129,25 @@ function planForTrack(track: Track) {
   if (rules.shareBack.enabled && !session.added.has(track.id) && seededHit(`room-add:${track.id}`, rules.shareBack.p)) {
     session.added.add(track.id)
     after(at(0.5, 0.8, 45, 120, `room-add-at:${track.id}`), () => {
-      if (!room().heJoinedAt) return
-      const have = new Set(room().tracks.map((t) => `${t.title}|${t.artist}`))
-      const pool = SONGS.filter((s) => !have.has(`${s.title}|${s.artist}`))
-      if (!pool.length) return
-      const song = pool[Math.floor(Math.random() * pool.length)]
-      useAppStore.getState().addRoomTracks([trackFromSong(song, 'him')])
-      say(makeRoomAdd(song.title))
-      console.debug('[engine] 他往歌单里加了一首', song.title)
+      void (async () => {
+        if (!room().heJoinedAt) return
+        const live = useRulesStore.getState().saved.music
+        const have = new Set(room().tracks.map((t) => `${t.title}|${t.artist}`))
+        // 拿设置里的关键词去搜真歌；搜不到就不往歌单里塞假歌
+        const next = await findNeteaseForKeywords(
+          live.keywords,
+          `room-add:${track.id}:${bucket()}`,
+          have,
+          'him',
+        )
+        if (!next) {
+          console.debug('[engine] 他想加歌，但关键词这次没搜到真歌')
+          return
+        }
+        useAppStore.getState().addRoomTracks([next])
+        say(makeRoomAdd(next.title))
+        console.debug('[engine] 他往歌单里加了一首', next.title)
+      })()
     })
   }
 }

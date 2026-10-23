@@ -16,8 +16,8 @@ import { useRulesStore } from '@/store/useRulesStore'
 /**
  * 接入（设置 → 接口与扩展）
  *
- * 干两件事：把「梦角能真的出声」（MiniMax 语音）和「他真的能上网搜」
- *（博查搜索）这两条路接通。
+ * 干两件事：把「梦角能真的出声」（MiniMax 语音）和「他真的能刷 B 站」
+ *（静态视频片单）这两条路接通。
  * - Key 存在**你自己的后端**（`apps/server/.data/db.json`），接口只回尾号，明文永远不回前端；
  *   也可以改走 `apps/server/.env`（`MINIMAX_API_KEY` / `SEARCH_API_KEY`），设置页留空即用 .env 的。
  * - 「测试发音」用当前音色真合成一句；「测试搜索」真去搜一次 —— 能听见 / 能搜到才算接通。
@@ -29,15 +29,6 @@ const SAMPLE = '你听，这是我自己说的，不是字卡拼出来的。'
 
 /** 搜索关键词沿用概率引擎的字段元数据，保证两边是同一份定义 */
 const TOPICS_FIELD = RULE_GROUPS.flatMap((g) => g.fields).find((f) => f.path === 'search.topics')
-
-/** 博查的时效过滤（值要和上游一致） */
-const FRESHNESS: { id: string; label: string }[] = [
-  { id: 'oneDay', label: '一天内' },
-  { id: 'oneWeek', label: '一周内' },
-  { id: 'oneMonth', label: '一个月内' },
-  { id: 'oneYear', label: '一年内' },
-  { id: 'noLimit', label: '不限时间' },
-]
 
 export function IntegrationScreen() {
   const { status, loaded, reachable, saving, note, refresh, save } = useIntegrationsStore()
@@ -69,14 +60,11 @@ export function IntegrationScreen() {
    */
   const [confirmOff, setConfirmOff] = useState<null | 'minimax' | 'search'>(null)
 
-  /* ── 联网搜索（博查）── */
-  const [searchKey, setSearchKey] = useState('')
-  const [freshness, setFreshness] = useState<string | null>(null)
-  const [count, setCount] = useState<number | null>(null)
+  /* ── B 站片单推送 ── */
   const [searching, setSearching] = useState(false)
   const [searchNote, setSearchNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [results, setResults] = useState<SearchResult[]>([])
-  const [testQuery, setTestQuery] = useState('今天有什么新闻')
+  const [testQuery, setTestQuery] = useState('音乐现场')
 
   /** 服务端状态回来后同步到输入框（之后以输入框为准） */
   useEffect(() => {
@@ -85,8 +73,6 @@ export function IntegrationScreen() {
     setModel((v) => v ?? status.minimax.model)
     setCustomModel((v) => v || (MODELS.some((m) => m.id === status.minimax.model) ? '' : status.minimax.model))
     setVoiceId((v) => v ?? status.minimax.voiceId)
-    setFreshness((v) => v ?? status.search.freshness)
-    setCount((v) => v ?? status.search.count)
   }, [loaded, status])
 
   useEffect(() => {
@@ -149,26 +135,8 @@ export function IntegrationScreen() {
     await save({ adminPassword: admin, minimax: { clear: true } })
   }
 
-  /* ── 联网搜索（博查） ── */
-  const effFreshness = freshness ?? status.search.freshness
-  const effCount = count ?? status.search.count
-
-  const doSaveSearch = async () => {
-    setSearchNote(null)
-    /** 关键词改在本地 rules 草稿里；这里和接口设置一起落盘 */
-    await saveRules()
-    const ok = await save({
-      adminPassword: admin,
-      // 留空 = 不改（避免「只想换时效」却把 Key 抹掉）
-      search: { apiKey: searchKey.trim() || undefined, freshness: effFreshness, count: effCount },
-    })
-    if (ok) {
-      setSearchKey('')
-      setSearchNote({ ok: true, text: '已保存。下面点「搜一下」真搜一次看看' })
-    }
-  }
-
-  /** 测试搜索：真去搜一次（只看结果，不发消息、不进轨迹） */
+  /* ── B 站片单推送 ── */
+  /** 测试搜索：真读一次静态片单（只看结果，不发消息、不进轨迹） */
   const doTestSearch = async () => {
     setSearching(true)
     setSearchNote(null)
@@ -178,7 +146,7 @@ export function IntegrationScreen() {
     if (r.ok) {
       setResults(r.results)
       const top = r.results[0]
-      setSearchNote({ ok: true, text: `真搜到 ${r.results.length} 条 · 首条：${top.siteName ? `${top.siteName} · ` : ''}${top.name}` })
+      setSearchNote({ ok: true, text: `真找到 ${r.results.length} 条 · 首条：${top.siteName ? `${top.siteName} · ` : ''}${top.name}` })
     } else {
       setSearchNote({ ok: false, text: searchReason(r.error, r.detail) })
     }
@@ -192,16 +160,10 @@ export function IntegrationScreen() {
     setSearching(false)
     if (r.ok) {
       const shape = r.media === 'video' ? '视频卡' : r.media === 'image' ? '图片卡' : '链接卡'
-      setSearchNote({ ok: true, text: `搜到并推了一条${shape}：「${r.topic}」→ ${r.title}（去聊天里看那张卡）` })
+      setSearchNote({ ok: true, text: `找到并推了一条${shape}：「${r.topic}」→ ${r.title}（去聊天里看那张卡）` })
     } else {
-      setSearchNote({ ok: false, text: `没搜到，什么都没推（这样才对）：「${r.topic}」· ${searchReason(r.error ?? 'HTTP_ERROR', r.detail)}` })
+      setSearchNote({ ok: false, text: `没找到，什么都没推（这样才对）：「${r.topic}」· ${searchReason(r.error ?? 'HTTP_ERROR', r.detail)}` })
     }
-  }
-
-  const doDisconnectSearch = async () => {
-    setSearchKey('')
-    setResults([])
-    await save({ adminPassword: admin, search: { clear: true } })
   }
 
   const enabled = rules.voice.enabled
@@ -222,7 +184,8 @@ export function IntegrationScreen() {
           <section className="rounded-xl border border-brand/30 bg-brand/5 p-3">
             <p className="text-[13px] font-medium text-ink">静态托管版</p>
             <p className="mt-1 text-[11px] leading-relaxed text-ink-sub">
-              聊天、字卡、日记、朋友圈、信箱、功能都在本机跑，不依赖后端。语音合成、联网搜索推送、跨设备同步需要服务端，这个版本不会假装能用；Key 也不会写进网页。
+              聊天、字卡、日记、朋友圈、信箱、功能都在本机跑，不依赖后端。B 站视频推送也照常可用（读同源静态片单）；
+              语音合成、跨设备同步需要服务端，这个版本不会假装能用；Key 也不会写进网页。
             </p>
           </section>
         )}
@@ -463,79 +426,29 @@ export function IntegrationScreen() {
             去概率调节引擎 ›
           </button>
         </Card>
+          </>
+        )}
 
-        {/* ── 联网搜索（博查） ── */}
+        {/* ── B 站视频推送 ── */}
         <Card
-          title="联网搜索推送（博查）"
-          desc="填好 Key 后点「搜一下」，真搜到才算接通。推给你的卡有三种形态，形态由内容说了算：链接卡（带站点图标和封面）/ 图片卡 / 视频卡 —— 图都是服务端真取过一遍的，取不到就不配图；博查几乎不返回视频站，所以视频卡很少见"
+          title="B 站视频推送"
+          desc="片单由 GitHub Actions 定时抓 B 站热门 + 排行榜，写成同源静态 JSON；前端直接读文件，不需要 Key、也不经过已经失效的代理。推给你的就是真视频和真封面，找不到就不推。"
         >
           <div className="flex items-center gap-2">
-            <span
-              className={clsx(
-                'h-2 w-2 rounded-full',
-                status.search.configured ? 'bg-[#07C160]' : reachable ? 'bg-[#FA9D3B]' : 'bg-[#FA5151]',
-              )}
-            />
+            <span className="h-2 w-2 rounded-full bg-[#FB7299]" />
             <span className="text-[14px] text-ink">
-              博查搜索
-              <span className="ml-1 text-[12px] text-ink-sub">
-                {status.search.configured
-                  ? `已接通 · ${status.search.source === 'env' ? (PROXY_MODE ? 'Deno Deploy 环境变量里的 Key' : '.env 里的 Key') : '设置里填的 Key'} ${status.search.hint}`
-                  : reachable
-                    ? '未配置'
-                    : PROXY_MODE
-                      ? '代理没连上'
-                      : '后端没在跑'}
-              </span>
+              哔哩哔哩 · 静态片单
+              <span className="ml-1 text-[12px] text-ink-sub">部署时 + 每 3 小时刷新</span>
             </span>
           </div>
           <p className="mt-1.5 text-[11px] leading-relaxed text-ink-faint">
-            由服务端 / 免费代理代搜（浏览器直连博查会被 CORS 挡，Key 也不该下发到前端）。Key 只存在服务端，接口只回尾号。
+            他推的是片单里真实存在的视频：标题、UP 主、时长、播放量和封面都来自 B 站。
             <span className="text-ink-sub">
-              搜到才推那张卡；搜不到 —— 没配 Key / 断网 / 被限流 / 一条结果都没有 —— <b>一条消息都不会发</b>，只在下面的轨迹里记一条失败。
+              片单读不到 / 一条都匹配不上时，<b>一条消息都不会发</b>，只在下面的轨迹里记一条失败。
             </span>
           </p>
 
-          <Field label="API Key" hint="留空 = 不改；清空授权请点下面的「断开」">
-            <input
-              type="password"
-              value={searchKey}
-              onChange={(e) => setSearchKey(e.target.value)}
-              placeholder={status.search.configured ? `已配置 ${status.search.hint}（不填就不改）` : 'sk-… 从博查开放平台（open.bochaai.com）拿'}
-              className="w-full rounded-lg bg-page px-3 py-2.5 text-[14px] text-ink outline-none ring-1 ring-hairline placeholder:text-ink-faint focus:ring-brand"
-            />
-          </Field>
-
-          <Field label="时效" hint="搜多久以内的东西（越近越像「新闻」，越远越像「资料」）">
-            <select
-              value={effFreshness}
-              onChange={(e) => setFreshness(e.target.value)}
-              className="w-full rounded-lg bg-page px-3 py-2.5 text-[14px] text-ink outline-none ring-1 ring-hairline focus:ring-brand"
-            >
-              {FRESHNESS.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-              {!FRESHNESS.some((f) => f.id === effFreshness) && <option value={effFreshness}>{effFreshness}</option>}
-            </select>
-          </Field>
-
-          <Field label="一次取几条" hint="引擎只把第一条推成卡片；多取几条是给下面的「搜一下」看的">
-            <select
-              value={String(effCount)}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className="w-full rounded-lg bg-page px-3 py-2.5 text-[14px] text-ink outline-none ring-1 ring-hairline focus:ring-brand"
-            >
-              {[3, 5, 8, 10].map((n) => (
-                <option key={n} value={n}>
-                  {n} 条
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          {(rules.search.enabled || draftRules.search.enabled) && TOPICS_FIELD && (
+          {TOPICS_FIELD && (
             <div className="mt-1 border-t border-hairline">
               <RuleField
                 field={TOPICS_FIELD}
@@ -546,67 +459,36 @@ export function IntegrationScreen() {
                 }}
                 active
               />
-              <p className="-mt-1 pb-1 text-[11px] leading-relaxed text-ink-faint">加 / 删关键词会自动保存</p>
+              <p className="-mt-1 pb-1 text-[11px] leading-relaxed text-ink-faint">
+                加 / 删关键词会自动保存；会先按这些词匹配片单，实在没有才从当前热门里挑一条。
+              </p>
             </div>
           )}
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="tap rounded-lg bg-brand px-3 py-2 text-[13px] text-white disabled:opacity-50"
-              disabled={saving || !canSave}
-              onClick={() => void doSaveSearch()}
-            >
-              保存
-            </button>
-            <button
-              className="tap rounded-lg bg-surface px-3 py-2 text-[13px] text-brand-deep ring-1 ring-hairline disabled:opacity-50"
-              disabled={searching || !status.search.configured}
+              disabled={searching}
               onClick={() => void doPushNow()}
             >
-              {searching ? '搜着…' : '现在推一条'}
+              {searching ? '找着…' : '现在推一条'}
             </button>
-            {status.search.configured &&
-              (confirmOff === 'search' ? (
-                <div className="flex w-full flex-wrap items-center gap-2 rounded-lg bg-[#fdecec] px-3 py-2 text-[12px] text-[#c0392b]">
-                  <span>断开 = 清掉服务端那把 Key（只回尾号，清掉要重填）</span>
-                  <button
-                    className="tap ml-auto rounded-md bg-[#FA5151] px-2.5 py-1 font-semibold text-white disabled:opacity-50"
-                    disabled={!canSave}
-                    onClick={() => {
-                      setConfirmOff(null)
-                      void doDisconnectSearch()
-                    }}
-                  >
-                    确认断开
-                  </button>
-                  <button className="tap text-ink-sub" onClick={() => setConfirmOff(null)}>
-                    取消
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className="tap rounded-lg bg-surface px-3 py-2 text-[13px] text-[#FA5151] ring-1 ring-hairline"
-                  onClick={() => setConfirmOff('search')}
-                >
-                  断开
-                </button>
-              ))}
           </div>
 
-          <Field label="搜一下（测试连通）" hint="真去搜一次：看得见结果才算接通。这一步不发消息、也不进轨迹">
+          <Field label="试一下片单" hint="真读一次静态片单：看得见结果才算接通。这一步不发消息、也不进轨迹">
             <div className="flex gap-2">
               <input
                 value={testQuery}
                 onChange={(e) => setTestQuery(e.target.value)}
-                placeholder="想搜什么"
+                placeholder="音乐现场 / 游戏实况 / 萌宠…"
                 className="min-w-0 flex-1 rounded-lg bg-page px-3 py-2 text-[13px] text-ink outline-none ring-1 ring-hairline placeholder:text-ink-faint focus:ring-brand"
               />
               <button
                 className="tap shrink-0 rounded-lg bg-surface px-3 py-2 text-[13px] text-brand-deep ring-1 ring-hairline disabled:opacity-50"
-                disabled={searching || !status.search.configured}
+                disabled={searching}
                 onClick={() => void doTestSearch()}
               >
-                搜一下
+                看看片单
               </button>
             </div>
           </Field>
@@ -621,7 +503,7 @@ export function IntegrationScreen() {
           {results.length > 0 && (
             <>
               <p className="mt-2 text-[11px] leading-relaxed text-ink-faint">
-                首条会推成卡片。上面这一测只看连通，所以没有真去验图；点「现在推一条」才会连图一起试。
+                首条会推成视频卡：B 站真封面 + 标题 + UP 主 + 时长。上面这一测只读片单，不发消息。
               </p>
               <ul className="mt-2 space-y-1.5">
                 {results.map((r, i) => (
@@ -660,7 +542,7 @@ export function IntegrationScreen() {
 
           <div className="mt-3 flex items-center gap-2 border-t border-hairline pt-3">
             <span className={clsx('text-[13px]', rules.search.enabled ? 'text-ink' : 'text-ink-faint')}>
-              引擎里的联网搜索推送：{rules.search.enabled ? '已开启' : '未开启'}
+              引擎里的 B 站视频推送：{rules.search.enabled ? '已开启' : '未开启'}
             </span>
             {!rules.search.enabled && (
               <button
@@ -682,14 +564,14 @@ export function IntegrationScreen() {
         {/* ── 音乐账号 ── */}
         <MusicAccountCard />
 
-        {/* ── 搜索轨迹 ── */}
+        {/* ── 推送轨迹 ── */}
         <Card
-          title="搜索轨迹"
-          desc="真的去搜过就记一条（成功和失败都记）—— 失败的那几条就是用来回答「为什么没搜到」的"
+          title="推送轨迹"
+          desc="真的从片单里找过就记一条（成功和失败都记）—— 失败的那几条就是用来回答「为什么没找到」的"
         >
           {logs.length === 0 ? (
             <p className="text-[11px] leading-relaxed text-ink-faint">
-              还没搜过。上面点「现在推一条」立刻试一次（会真的用当前主题去搜）。
+              还没推过。上面点「现在推一条」立刻试一次（会真的按当前关键词从片单里挑）。
             </p>
           ) : (
             <>
@@ -706,7 +588,7 @@ export function IntegrationScreen() {
                             l.ok ? 'bg-brand-soft text-brand-deep' : 'bg-[#fdecec] text-[#c0392b]',
                           )}
                         >
-                          {l.ok ? '推了' : '没搜到'}
+                          {l.ok ? '推了' : '没找到'}
                         </span>
                         {l.ok && l.media && (
                           <span className="shrink-0 rounded bg-hairline/70 px-1 py-0.5 text-[9.5px] text-ink-sub">
@@ -740,10 +622,8 @@ export function IntegrationScreen() {
         </Card>
 
         <p className="pb-4 text-center text-[11px] text-ink-faint">
-          「测试发音」的每一句都会缓存，同一句话不会重复计费；搜索不缓存，每次都真去搜。
+          「测试发音」的每一句都会缓存，同一句话不会重复计费；B 站片单读同源文件，不消耗任何接口额度。
         </p>
-          </>
-        )}
       </div>
     </div>
   )

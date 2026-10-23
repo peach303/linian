@@ -147,6 +147,8 @@ export interface RuleConfig {
     lyric: ProbToggle
     /** 他主动邀请我一起听 */
     inviteMe: ProbToggle & { cooldownMin: number }
+    /** 他直接拿去网易云搜歌的关键词；搜到真歌才会推荐，不再用默认假歌单 */
+    keywords: string[]
   }
 
   doodle: {

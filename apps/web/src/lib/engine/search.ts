@@ -1,34 +1,29 @@
 /**
- * 联网搜索推送的引擎（真去网上搜，搜到才推）
+ * B 站视频推送的引擎（只从真片单里挑，找不到就不推）
  *
  * 这个模块的红线最直白，所以先写在最上面：
  *
- *   · **搜到了** → 推一张 `SEARCH_PUSH` 卡：标题 / 链接 / 摘要 / 图**都是真返回的**，
+ *   · **片单里有** → 推一张 `SEARCH_PUSH` 视频卡：标题 / 链接 / UP 主 / 时长 / 封面**都是真的**，
  *     同时往 `state.searchPush.logs` 记一条成功（成功的也留着，好回溯「他都推过什么」）。
- *     卡片有三种形态（见 `runSearch` 里那段注释）：链接卡 / 图片卡 / 视频卡。
- *   · **搜不到**（没配 Key / 连不上外网 / 被限流 / 一条结果都没有）→ **一条消息都不发**，
- *     只记一条失败 —— 界面上能看见「上次为什么没搜到」。
- *     宁可空着，也不编一条「他上网看到……」。
- *   · **图配不上就不配**（上游的图一半是防盗链 / logo / 404）：退回纯链接卡，
- *     绝不放一张占位图或者「他拍的照」。
+ *   · **片单读不到 / 一条都匹配不上** → **一条消息都不发**，只记一条失败 ——
+ *     界面上能看见「上次为什么没推」。宁可空着，也不编一条「他上网看到……」。
+ *   · **封面取不到** → 卡片退回纯文字，绝不放占位图。
  *
  * 排程同样**从数据推导、不存任务表**（和世界感知 / 日记一个路子）：
  *
  *   · 一个间隔里最多试一次（`search.pushIntervalMin`，上一次试过的时刻从轨迹与聊天记录里现算）；
  *   · 试不试 = 种子抽签（`search.p`，**种子 = 日期 + 间隔槽**）→ 同一槽里刷新不重掷；
- *   · 搜什么 = 从 `search.topics` 里种子抽一个（种子同上）→ 同一槽里搜的是同一个词。
+ *   · 推什么 = 从 `search.topics` 里种子抽一个（种子同上）→ 同一槽里匹配同一个词。
  *
- * 请求走我们自己的后端（`POST /api/v1/search`）：浏览器直连博查会被 CORS 挡，
- * 而且 Key 只该待在服务端（见 `apps/server/bocha.mjs`）。
+ * 片单由 `scripts/fetch-bilibili-feed.mjs` 在构建时 / 定时抓取，前端读同源静态 JSON；
+ * 浏览器不直连 B 站（412 / CORS），也不经过已经失效的 Deno 代理。
  */
 import { nid } from '@/lib/ids'
 import { dayKeyOf } from '@/lib/diary'
 import { slotOf } from '@/lib/world'
 import { searchWeb } from '@/lib/search'
-import { INTEGRATIONS } from '@/lib/integrations'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
-import { useIntegrationsStore } from '@/store/useIntegrationsStore'
 import { useRulesStore } from '@/store/useRulesStore'
 import { MOCK_CONVERSATION } from '@/mock/chat'
 import { inQuietHours } from './proactive'
@@ -39,8 +34,8 @@ import type { Message } from '@/types'
 /** 一分钟一趟：这件事只关心「到没到下一个间隔」 */
 const TICK_MS = 60_000
 
-/** 主题没设时兜底（规则里默认有 4 个，通常用不到） */
-const FALLBACK_TOPICS = ['新闻', '趣事', '音乐']
+/** 主题没设时兜底（B 站热门分区） */
+const FALLBACK_TOPICS = ['音乐现场', '游戏实况', '知识科普', '美食', '旅行']
 
 let attached = false
 let clock: ReturnType<typeof setInterval> | null = null
@@ -61,11 +56,8 @@ export interface SearchAttempt {
   detail?: string
 }
 
-/** 一次取几条（「设置 → 接入」里配的） */
-const wantedCount = () => {
-  const n = useIntegrationsStore.getState().status.search.count
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : 5
-}
+/** 一次取几条（只推第一条；多取几条留作日志和手动测试） */
+const wantedCount = () => 8
 
 /**
  * 上一次「试过」是什么时候（成功、失败都算）
@@ -134,7 +126,8 @@ export async function runSearch(
   const body = (top.summary || top.snippet || top.name).trim()
   /** 图片卡指到「这张图出自的那个页面」；链接卡/视频卡指首位结果 */
   const linkUrl = media === 'image' ? pic?.hostPageUrl || top.url : top.url
-  const engineLabel = out.source === 'news-rss' ? '新闻 RSS' : '博查'
+  const engineLabel = '哔哩哔哩'
+  const sourceLabel = `${engineLabel} · 热门`
 
   const msg: Message = {
     id: nid('m'),
@@ -145,11 +138,10 @@ export async function runSearch(
     text: body,
     payload: {
       // 卡面直接读的字段（`MessageBubble` 的 SEARCH_PUSH 分支）
-      source: top.siteName ? `${top.siteName} · ${engineLabel}` : `${engineLabel}搜索`,
+      source: sourceLabel,
       title: media === 'image' ? '' : top.name || body.slice(0, 40),
       url: linkUrl,
       siteName: top.siteName,
-      /** 站点图标（博查给的真 favicon） */
       siteIcon: top.siteIcon || '',
       snippet: top.snippet,
       summary: top.summary,
@@ -158,12 +150,12 @@ export async function runSearch(
       media,
       /** 他配的那一句（可能没有）。只有姿态，不评价内容 */
       caption,
-      /** 配图 / 封面（服务端验过的图；`proxy` 走我们后端代取，防盗链也能显示） */
+      /** 配图 / 封面（B 站真封面，`proxy` 走 wsrv 缩图） */
       cover: pic ? { proxy: pic.proxy, src: pic.src, width: pic.width, height: pic.height, from: pic.from, hostPageUrl: pic.hostPageUrl } : undefined,
       /** 视频卡：真时长 + 凭哪一路判成视频页 */
       clip: video ? { site: video.site, duration: video.duration, why: video.why } : undefined,
-      /** 这次是哪来的：搜索词 + 用了哪个搜索服务 + 取到几条 + 形态（复盘用） */
-      search: { query: topic, engine: out.source === 'news-rss' ? 'news-rss' : 'bocha', freshness: r.freshness || 'oneWeek', results: out.results.length, manual: Boolean(opts.manual), imageP: r.imageP, caption: Boolean(caption) },
+      /** 这次是哪来的：搜索词 + 片单来源 + 取到几条 + 形态（复盘用） */
+      search: { query: topic, engine: 'bilibili', freshness: 'feed', results: out.results.length, manual: Boolean(opts.manual), imageP: r.imageP, caption: Boolean(caption) },
     },
     createdAt: now.toISOString(),
   }
@@ -192,8 +184,7 @@ function logNote(
   notes: string[],
 ): string {
   if (media === 'video') {
-    const why = video?.why === 'host' ? '域名是视频站' : video?.why === 'og' ? '页面带 og:video' : ''
-    return `视频页${video?.duration ? ` ${video.duration}` : ''}${why ? `（${why}）` : ''}`
+    return `B 站视频${video?.duration ? ` ${video.duration}` : ''}`
   }
   if (media === 'image') return `配了图${notes.length ? `（另有 ${notes.length} 张被丢掉）` : ''}`
   return picCount
@@ -224,8 +215,6 @@ async function check(now = new Date()) {
   if (!st.ready) return
   const r = rules()
   if (!r.enabled) return
-  /** 没配 Key 就一条都不试（也不刷失败轨迹：配置问题去「接入」页看） */
-  if (!INTEGRATIONS.search) return
 
   const intervalMs = Math.max(10, Math.round(r.pushIntervalMin)) * 60_000
   const last = lastAttemptAt()

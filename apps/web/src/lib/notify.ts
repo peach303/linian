@@ -58,7 +58,7 @@ function messageBody(m: Message): string {
     case 'IMAGE':
       return '给你发了一张图片'
     case 'SEARCH_PUSH':
-      return '给你推了一条网页'
+      return '给你推了一条 B 站视频'
     case 'CARD':
       return m.payload?.cardType === 'STICKER' ? '给你发了一个表情包' : '给你发了一张字卡'
     case 'CHOICE':

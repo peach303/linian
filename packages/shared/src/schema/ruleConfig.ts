@@ -66,6 +66,26 @@ export const ruleConfigSchema = z.object({
     maxDurationMin: z.number().default(90),
   }),
 
+  music: z
+    .object({
+      join: z.object({ enabled: z.boolean().default(true), p: z.number().default(0.88), delay: range(5, 300) }),
+      say: prob(0.7),
+      listenMin: range(8, 45),
+      shareBack: prob(0.35),
+      lyric: prob(0.3),
+      inviteMe: z.object({ enabled: z.boolean().default(true), p: z.number().default(0.04), cooldownMin: z.number().default(720) }),
+      keywords: z.array(z.string()).default(['晴天', '陈粒', 'City of Stars']),
+    })
+    .default({
+      join: { enabled: true, p: 0.88, delay: [5, 300] },
+      say: { enabled: true, p: 0.7 },
+      listenMin: [8, 45],
+      shareBack: { enabled: true, p: 0.35 },
+      lyric: { enabled: true, p: 0.3 },
+      inviteMe: { enabled: true, p: 0.04, cooldownMin: 720 },
+      keywords: ['晴天', '陈粒', 'City of Stars'],
+    }),
+
   mail: z.object({
     length: range(150, 600),
     randomPunctuation: z.boolean().default(true),

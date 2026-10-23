@@ -80,23 +80,21 @@ export async function bootstrap() {
   finalizeStaleCalls()
   /* 他偶尔会主动打来：受「规则 → 通话 → 主动来电」控制 */
   attachIncomingCallEngine()
+  /* B 站视频推送：读同源静态片单，不依赖后端 / 代理，所以放在接入判断之前挂 */
+  attachSearchEngine()
 
   if (!API_ENABLED) {
-    /* 纯静态站：没有后端，语音 / 搜索 / 跨设备同步都不假装能用 */
+    /* 纯静态站：B 站推送照常可用；语音 / 跨设备同步不假装能用 */
     useIntegrationsStore.setState({
       loaded: true,
       reachable: false,
-      note: '静态托管模式：没有后端，语音 / 搜索 / 同步不可用',
+      note: '静态托管模式：语音 / 同步不可用；B 站视频推送读本机静态片单',
     })
   } else {
     /* 接入状态（MiniMax 语音能不能真的出声）：读到了才会把 INTEGRATIONS.tts 打开，
        读不到就一律「未接通」——引擎宁可只写轨迹，也不发假语音。
        放在渲染前（就是一次本机请求），免得第一条回复抽签时开关还没就位。 */
     await useIntegrationsStore.getState().refresh()
-
-    /* 挂上联网搜索推送：真去博查搜，**搜到才推**，搜不到只记一条轨迹。
-       放在接入状态读回来之后挂 —— 那一步才知道 Key 配没配、一次取几条。 */
-    attachSearchEngine()
 
     /* ── ② 远端（后台，不阻塞渲染） ── */
     /* 静态 + 代理只借代理做语音 / 搜索，聊天数据仍只在本机，不拉也不推。 */

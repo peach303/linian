@@ -98,6 +98,8 @@ export const DEFAULT_RULES: RuleConfig = {
     lyric: t(0.3),
     /** 他主动邀请我一起听 */
     inviteMe: { ...t(0.04), cooldownMin: 720 },
+    /** 他直接拿去网易云搜歌的关键词；搜到真歌才推荐 */
+    keywords: ['晴天', '陈粒', 'City of Stars'],
   },
   doodle: {
     reply: { enabled: true, p: 0.85, delay: [10, 900] },
@@ -120,7 +122,7 @@ export const DEFAULT_RULES: RuleConfig = {
   search: {
     enabled: false,
     p: 0.06,
-    topics: ['今天的新闻', '最近的热点', '本周新电影', '最近好听的歌', '本地天气', '可爱猫狗'],
+    topics: ['音乐现场', '电影解说', '游戏实况', '知识科普', '美食探店', '旅行vlog', '萌宠', '科技数码'],
     pushIntervalMin: 240,
     /** 有可用图时，掷中这个概率就发**图片卡**（不然是链接卡） */
     imageP: 0.35,
@@ -247,16 +249,14 @@ export const RULE_GROUPS: RuleGroup[] = [
   },
   {
     key: 'search',
-    label: '联网搜索',
-    icon: '🔎',
-    blurb: '他按你写的关键词去搜，只推真搜到的结果；默认只看最近一周，避免旧闻',
+    label: 'B 站视频',
+    icon: '📺',
+    blurb: '他按你写的关键词从 B 站热门片单里挑真视频推给你；片单定时刷新，读不到就一条都不推',
     fields: [
-      { path: 'search.enabled', label: '联网搜索推送', desc: '关闭后他不会再往聊天里推网页', kind: 'bool' },
-      { path: 'search.p', label: '每个间隔搜一次的概率', desc: '和「搜索关键词」一起用；没配 Key 时只记轨迹，不伪造结果', kind: 'p', requires: 'search.enabled' },
-      { path: 'search.topics', label: '搜索关键词', desc: '他自己会搜的词。写你关心的话题、新闻方向、想让他留意的店 / 城市 / 人名都可以；一行一个', kind: 'keywords', requires: 'search.enabled' },
-      { path: 'search.freshness', label: '只看多久以内', desc: '博查的时效过滤；想追新闻选「最近一天 / 最近一周」', kind: 'select', options: ['oneDay', 'oneWeek', 'oneMonth', 'oneYear', 'noLimit'], optionLabels: { oneDay: '最近一天', oneWeek: '最近一周', oneMonth: '最近一月', oneYear: '最近一年', noLimit: '不限时间' }, requires: 'search.enabled' },
-      { path: 'search.pushIntervalMin', label: '两次搜索至少隔多久', desc: '分钟；同一间隔里最多试一次', kind: 'int', min: 10, max: 10080, step: 10, unit: 'min', requires: 'search.enabled' },
-      { path: 'search.imageP', label: '有图时发图片卡', desc: '图是服务端真取过的；取不到就退回链接卡', kind: 'p', requires: 'search.enabled' },
+      { path: 'search.enabled', label: 'B 站视频推送', desc: '关闭后他不会再往聊天里推视频', kind: 'bool' },
+      { path: 'search.p', label: '每个间隔推一次的概率', desc: '和「推送关键词」一起用；片单读不到时只记轨迹，不伪造结果', kind: 'p', requires: 'search.enabled' },
+      { path: 'search.topics', label: '推送关键词', desc: '按这些词匹配 B 站片单：音乐现场、游戏实况、知识科普、萌宠… 一行一个；匹配不到才从当前热门里挑', kind: 'keywords', requires: 'search.enabled' },
+      { path: 'search.pushIntervalMin', label: '两次推送至少隔多久', desc: '分钟；同一间隔里最多试一次', kind: 'int', min: 10, max: 10080, step: 10, unit: 'min', requires: 'search.enabled' },
       { path: 'search.captionP', label: '配一句附言', desc: '只说他看到什么，不评价内容', kind: 'p', requires: 'search.enabled' },
     ],
   },
@@ -328,6 +328,7 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'gift.thanks', label: '礼物 · 说声谢谢', kind: 'prob', child: true, requires: 'gift.accept.enabled' },
       { path: 'gift.giveMe', label: '礼物 · 他主动送', kind: 'prob' },
       { path: 'gift.giveMe.cooldownMin', label: '送礼冷却', kind: 'int', min: 0, max: 10080, step: 60, unit: 'min', child: true, requires: 'gift.giveMe' },
+      { path: 'music.keywords', label: '音乐关键词', desc: '他会拿这些词直接去网易云搜歌，搜到真歌才推荐 / 邀请你一起听；一行一个', kind: 'keywords' },
       { path: 'music.join.enabled', label: '音乐 · 会加入一起听', desc: '不加入的话歌单会一直挂着', kind: 'bool' },
       { path: 'music.join.p', label: '音乐 · 加入概率', kind: 'p', requires: 'music.join.enabled' },
       { path: 'music.join.delay', label: '音乐 · 加入延迟', desc: '最快 / 最慢', kind: 'range', min: 3, max: 7200, step: 1, unit: 'sec', child: true, requires: 'music.join.enabled' },
@@ -518,10 +519,15 @@ export function withRuleDefaults(stored: unknown): RuleConfig {
     if (msg.dailyLimit?.[0] === 1 && msg.dailyLimit?.[1] === 6) msg.dailyLimit = [2, 8]
   }
 
-  /** 旧版搜索主题是一组固定标签；还停在旧默认的，换成更能直接搜的关键词 */
+  /** 旧版搜索主题是一组固定标签；还停在旧默认的，换成 B 站关键词 */
   const oldTopics = ['新闻', '搞笑', '美食', '猫狗', '电影', '摄影', '音乐', '风景', '游戏', '日常']
   if (Array.isArray(out.search?.topics) && out.search.topics.length === oldTopics.length &&
       oldTopics.every((t, i) => out.search.topics[i] === t)) {
+    out.search.topics = [...DEFAULT_RULES.search.topics]
+  }
+  const bochaTopics = ['今天的新闻', '最近的热点', '本周新电影', '最近好听的歌', '本地天气', '可爱猫狗']
+  if (Array.isArray(out.search?.topics) && out.search.topics.length === bochaTopics.length &&
+      bochaTopics.every((t, i) => out.search.topics[i] === t)) {
     out.search.topics = [...DEFAULT_RULES.search.topics]
   }
   return out

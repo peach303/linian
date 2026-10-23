@@ -51,6 +51,40 @@ function write(provider: LyricProvider, id: string, lines: string[]) {
   }
 }
 
+/** 把 LRC 拆成一行一句（去掉时间轴和制作名单） */
+function parseLrc(raw: unknown): string[] {
+  const text = String(raw || '')
+  if (!text.trim()) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const body = line.replace(/^\s*\[[^\]]*\]\s*/g, '').trim()
+    if (!body) continue
+    if (/^(作词|作曲|编曲|制作|混音|母带|录音|和声|监制|出品|发行|词|曲)\s*[:：]/.test(body)) continue
+    const k = body.replace(/\s+/g, '')
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(body)
+  }
+  return out
+}
+
+/** 直接向公开镜像要 LRC（浏览器可用，不依赖代理） */
+async function directLyric(id: string, provider: LyricProvider): Promise<string[]> {
+  try {
+    const url =
+      provider === 'qq'
+        ? `https://api.vkeys.cn/v2/music/tencent/lyric?mid=${encodeURIComponent(id)}`
+        : `https://api.vkeys.cn/v2/music/netease/lyric?id=${encodeURIComponent(id)}`
+    const res = await fetch(url)
+    const j = (await res.json().catch(() => null)) as { code?: number; data?: { lrc?: string } } | null
+    if (!j || j.code !== 200) return []
+    return parseLrc(j.data?.lrc)
+  } catch {
+    return []
+  }
+}
+
 /** 取一首歌的歌词（网易云 / QQ）；失败返回空数组（不抛） */
 export async function ensureLyrics(songId: string, provider: LyricProvider = 'netease'): Promise<string[]> {
   const id = String(songId || '').trim()
@@ -62,6 +96,13 @@ export async function ensureLyrics(songId: string, provider: LyricProvider = 'ne
   if (running) return running
   const task = (async () => {
     try {
+      // 先走公开镜像；代理挂了也能拿到歌词
+      const direct = await directLyric(id, provider)
+      if (direct.length) {
+        write(provider, id, direct)
+        return direct
+      }
+      // 镜像偶尔会缺歌，再问一次自己的代理
       const param = provider === 'qq' ? `mid=${encodeURIComponent(id)}` : `id=${encodeURIComponent(id)}`
       const res = await fetch(`${API_BASE}/music/lyric?${param}`)
       const j = (await res.json().catch(() => null)) as { ok?: boolean; lines?: string[] } | null

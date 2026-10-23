@@ -390,6 +390,19 @@ export function MusicRoomScreen() {
         <section className="mt-4">
           <div className="mb-2 flex items-center px-1">
             <span className="text-[13px] font-medium text-ink">歌单 {tracks.length} 首</span>
+            {tracks.some((t) => playableKind(t) === 'none') && (
+              <button
+                className="tap ml-auto mr-3 text-[11px] text-ink-faint"
+                onClick={() => {
+                  const keep = tracks.filter((t) => playableKind(t) !== 'none')
+                  const nextCurrent = keep.some((t) => t.id === room.currentId) ? room.currentId : keep[0]?.id
+                  if (room.currentId && !keep.some((t) => t.id === room.currentId)) stop()
+                  patchRoom({ tracks: keep, currentId: nextCurrent, position: 0 })
+                }}
+              >
+                清掉没有音源的歌
+              </button>
+            )}
             <button className="tap ml-auto text-[12px] text-brand-deep" onClick={() => setSheetOpen(true)}>
               ＋ 加歌
             </button>

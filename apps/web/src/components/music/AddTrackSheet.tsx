@@ -10,7 +10,10 @@ import {
   qqStreamUrl,
   resolveNetease,
   resolveQQ,
+  searchNetease,
   titleFromFileName,
+  trackFromNeteaseHit,
+  type NeteaseHit,
 } from '@/lib/music'
 import { saveAudioFile } from '@/lib/repo'
 import { useAppStore } from '@/store/useAppStore'
@@ -39,6 +42,7 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
 
   /* 网易云 */
   const [input, setInput] = useState('')
+  const [nHits, setNHits] = useState<NeteaseHit[]>([])
   const [resolved, setResolved] = useState<{ songId: string; title: string; artist: string; cover?: string } | null>(null)
   const [nTitle, setNTitle] = useState('')
   const [nArtist, setNAritst] = useState('')
@@ -113,25 +117,40 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
     setNote('')
     setBusy(true)
     setResolved(null)
-    const r = await resolveNetease(raw)
+    setNHits([])
+    // 看起来像链接 / 纯数字 id 才走解析；否则当成关键词直接搜网易云
+    if (neteaseSongId(raw)) {
+      const r = await resolveNetease(raw)
+      setBusy(false)
+      if (r?.songId) {
+        setResolved(r)
+        setNTitle(r.title || '')
+        setNAritst(r.artist || '')
+        return
+      }
+      // 后端不在线也没关系：只要能抠出 id，就能用官方外链播放器播
+      const id = neteaseSongId(raw)
+      if (id) {
+        setResolved({ songId: id, title: '', artist: '' })
+        setNTitle('')
+        setNAritst('')
+        setNote('没连上解析服务，不过这首歌会走代理音频流播放；把歌名歌手补一下就行。')
+        return
+      }
+      setNote('认不出歌曲 id：可以贴「分享」出来的整段文字，或者 music.163.com/song?id=xxx 这样的链接。')
+      return
+    }
+    // 关键词搜索：拿网易云真实歌曲 id，选一首直接加
+    const hits = await searchNetease(raw, 10)
     setBusy(false)
-    if (r?.songId) {
-      // 后端能解析（歌名 / 歌手 / 封面）
-      setResolved(r)
-      setNTitle(r.title || '')
-      setNAritst(r.artist || '')
-      return
-    }
-    // 后端不在线也没关系：只要能抠出 id，就能用官方外链播放器播
-    const id = neteaseSongId(raw)
-    if (id) {
-      setResolved({ songId: id, title: '', artist: '' })
-      setNTitle('')
-      setNAritst('')
-      setNote('没连上解析服务，不过这首歌会走代理音频流播放；把歌名歌手补一下就行。')
-      return
-    }
-    setNote('认不出歌曲 id：可以贴「分享」出来的整段文字，或者 music.163.com/song?id=xxx 这样的链接。')
+    setNHits(hits)
+    if (!hits.length) setNote('没搜到这首歌，换个歌名或歌手试试。')
+  }
+
+  function addNeteaseHit(hit: NeteaseHit) {
+    const track = trackFromNeteaseHit(hit, 'me')
+    done([track])
+    onClose()
   }
 
   function addNetease() {
@@ -294,17 +313,50 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
           <div className="space-y-2">
             <input
               className={input2}
-              placeholder="贴「分享」出来的整段，或 music.163.com/song?id=…"
+              placeholder="搜歌名 / 歌手，或贴分享链接 / song?id=…"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value)
+                if (nHits.length) setNHits([])
+                if (resolved) setResolved(null)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void doResolve()
+              }}
             />
             <button
               className="tap w-full rounded-lg bg-surface py-2.5 text-[13px] text-brand-deep ring-1 ring-hairline"
               disabled={busy || !input.trim()}
               onClick={() => void doResolve()}
             >
-              {busy ? '正在认这首歌…' : '认一下这首歌'}
+              {busy ? '正在找…' : '搜网易云 / 认这首歌'}
             </button>
+
+            {nHits.length > 0 && (
+              <div className="max-h-52 space-y-1 overflow-y-auto no-scrollbar">
+                {nHits.map((h) => (
+                  <button
+                    key={h.songId}
+                    className="tap flex w-full items-center gap-2 rounded-xl bg-surface p-2 text-left ring-1 ring-hairline"
+                    onClick={() => addNeteaseHit(h)}
+                  >
+                    {h.cover ? (
+                      <img src={h.cover} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                    ) : (
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-page text-[18px]">🎧</span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] text-ink">{h.title}</span>
+                      <span className="block truncate text-[11px] text-ink-faint">
+                        {h.artist || '未知歌手'}
+                        {h.album ? ` · ${h.album}` : ''}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[11px] text-brand-deep">加歌 ›</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {resolved && (
               <div className="space-y-2 rounded-xl bg-surface p-3 ring-1 ring-hairline">

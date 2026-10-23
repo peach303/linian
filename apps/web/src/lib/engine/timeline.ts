@@ -35,7 +35,7 @@ import { inQuietHours } from './proactive'
 import { pick, seededHit, seededPick, seededRange } from './seed'
 import { HIS_DOODLES } from '@/lib/doodles'
 import { quoteRefOf } from '@/lib/quote'
-import { SONGS, trackFromSong } from '@/lib/music'
+import { findNeteaseForKeywords, playableKind } from '@/lib/music'
 import { pickCachedLyric, preloadTrackLyrics } from '@/lib/lyrics'
 import { dayKeyOf } from '@/lib/diary'
 import { favoriteFromLetter, favoriteFromMessage, favoriteFromMoment } from '@/lib/favorites'
@@ -717,7 +717,7 @@ function hisMusicResponse(): TimelineEvent[] {
     out.push({
       key: `music-back:${msg.id}`,
       at: +new Date(p.joined.at) + seededRange(`mu-sb-d:${msg.id}`, [20, 300]) * 1000,
-      run: () => shareHisSong(),
+      run: () => shareHisSong(msg.id),
     })
     break
   }
@@ -757,14 +757,37 @@ function joinMyMusic(id: string) {
   console.debug('[engine] 他加入了一起听', p.title, `${listenMin} 分钟`)
 }
 
-function shareHisSong() {
-  const song = pick(SONGS)
-  pushHisMessage({
-    kind: 'MUSIC_INVITE',
-    text: `${song.title} - ${song.artist}`,
-    payload: { title: song.title, artist: song.artist, cover: song.cover, from: 'him' },
-  })
-  console.debug('[engine] 他回推了一首歌', song.title)
+function shareHisSong(inviteId: string) {
+  void (async () => {
+    const rules = useRulesStore.getState().saved
+    const app = useAppStore.getState()
+    const have = new Set(app.room.tracks.map((t) => `${t.title}|${t.artist}`))
+    const track = await findNeteaseForKeywords(
+      rules.music.keywords,
+      `share:${inviteId}`,
+      have,
+      'him',
+    )
+    // 搜不到真歌就不发邀请 —— 不再拿默认假歌单凑数
+    if (!track) {
+      console.debug('[engine] 他回推歌曲：关键词这次没搜到真歌，安静跳过')
+      return
+    }
+    preloadTrackLyrics(track)
+    app.addRoomTracks([track])
+    pushHisMessage({
+      kind: 'MUSIC_INVITE',
+      text: `${track.title} - ${track.artist}`,
+      payload: {
+        title: track.title,
+        artist: track.artist,
+        cover: track.cover,
+        trackId: track.id,
+        from: 'him',
+      },
+    })
+    console.debug('[engine] 他回推了一首歌', track.title)
+  })()
 }
 
 /** 他主动邀请我一起听（`music.inviteMe`）—— 不等我先发邀请 */
@@ -793,42 +816,54 @@ function hisMusicOpportunity(now: number): TimelineEvent | null {
 }
 
 function sendHisMusicInvite(bucket: number) {
-  const app = useAppStore.getState()
-  const rules = useRulesStore.getState().saved
-  const room = app.room
-  const track = room.tracks.length ? seededPick(room.tracks, `mus-track:${bucket}`) : undefined
-  const fallbackSong = seededPick(SONGS, `mus-song:${bucket}`) ?? SONGS[0]!
-  const song = track ?? fallbackSong
+  void (async () => {
+    const app = useAppStore.getState()
+    const rules = useRulesStore.getState().saved
+    const room = app.room
+    const playable = room.tracks.filter((t) => playableKind(t) !== 'none')
+    let track = playable.length ? seededPick(playable, `mus-track:${bucket}`) : undefined
 
-  let trackId = track?.id
-  if (!track && fallbackSong) {
-    const t = trackFromSong(fallbackSong, 'him')
-    app.addRoomTracks([t])
-    trackId = t.id
-  }
+    // 歌单里没有能放的真歌 → 拿设置里的关键词去网易云搜；搜不到就不邀请
+    if (!track) {
+      const have = new Set(room.tracks.map((t) => `${t.title}|${t.artist}`))
+      track = (await findNeteaseForKeywords(
+        rules.music.keywords,
+        `invite:${bucket}`,
+        have,
+        'him',
+      )) ?? undefined
+      if (!track) {
+        console.debug('[engine] 他主动邀请：关键词这次没搜到真歌，安静跳过')
+        return
+      }
+      app.addRoomTracks([track])
+    }
 
-  const at = new Date()
-  const listenMin = Math.round(seededRange(`mus-min:${bucket}`, rules.music.listenMin))
-  // 他发邀请时就已经在房间里了；点进「一起听」不会看到空房间
-  app.patchRoom({
-    heJoinedAt: at.toISOString(),
-    heStaysUntil: new Date(at.getTime() + listenMin * 60_000).toISOString(),
-    currentId: trackId,
-  })
-  pushHisMessage({
-    kind: 'MUSIC_INVITE',
-    text: `${song.title} - ${song.artist}`,
-    proactive: true,
-    payload: {
-      title: song.title,
-      artist: song.artist,
-      cover: song.cover,
-      from: 'him',
-      trackId,
-      listenMin,
-    },
-  })
-  console.debug('[engine] 他主动邀请你一起听', song.title)
+    preloadTrackLyrics(track)
+
+    const at = new Date()
+    const listenMin = Math.round(seededRange(`mus-min:${bucket}`, rules.music.listenMin))
+    // 他发邀请时就已经在房间里了；点进「一起听」不会看到空房间
+    app.patchRoom({
+      heJoinedAt: at.toISOString(),
+      heStaysUntil: new Date(at.getTime() + listenMin * 60_000).toISOString(),
+      currentId: track.id,
+    })
+    pushHisMessage({
+      kind: 'MUSIC_INVITE',
+      text: `${track.title} - ${track.artist}`,
+      proactive: true,
+      payload: {
+        title: track.title,
+        artist: track.artist,
+        cover: track.cover,
+        from: 'him',
+        trackId: track.id,
+        listenMin,
+      },
+    })
+    console.debug('[engine] 他主动邀请你一起听', track.title)
+  })()
 }
 
 /** 我画了一张 → 他回话（`doodle.reply`）→ 也可能画一张回你 */

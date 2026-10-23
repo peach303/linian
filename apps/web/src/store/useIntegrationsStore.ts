@@ -43,7 +43,7 @@ export const useIntegrationsStore = create<IntegrationsState>((set) => ({
         status: EMPTY_INTEGRATIONS,
         reachable: false,
         loaded: true,
-        note: '纯静态模式：没有后端或代理，语音 / 搜索 / 同步不可用',
+        note: '纯静态模式：语音 / 同步不可用；B 站视频推送照常可用',
       })
       return
     }

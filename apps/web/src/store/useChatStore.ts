@@ -58,7 +58,7 @@ interface ChatState {
   /** 递东西给他：礼物（从礼物柜里挑一件） */
   sendGift: (gift: GiftItem, note?: string) => void
   /** 递东西给他：音乐邀请（一起听这首歌） */
-  sendMusicInvite: (song: { title: string; artist: string; cover?: string }) => void
+  sendMusicInvite: (song: { title: string; artist: string; cover?: string; trackId?: string }) => void
   /** 递东西给他：涂鸦（存笔画，不存图片） */
   sendDoodle: (payload: DoodlePayload) => void
   /** 发一张本机图片（dataURL） */
@@ -429,7 +429,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       kind: 'MUSIC_INVITE',
       status: 'SENT',
       text: song.artist ? `${title} - ${song.artist}` : title,
-      payload: { title, artist: song.artist.trim(), cover: song.cover, from: 'me' },
+      payload: { title, artist: song.artist.trim(), cover: song.cover, trackId: song.trackId, from: 'me' },
       createdAt: now(),
     }
     set((st) => ({ messages: [...st.messages, msg], extendOpen: false, extendPanel: 'main' }))

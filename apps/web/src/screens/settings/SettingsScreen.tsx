@@ -214,14 +214,8 @@ export function SettingsScreen() {
             chevron
           />
           <Row
-            label="联网搜索推送"
-            value={
-              !API_ENABLED
-                ? '静态版不可用'
-                : searchOn
-                  ? `已开启 · ${PROXY_MODE ? '走免费代理' : '搜到才推'}`
-                  : '已关闭'
-            }
+            label="B 站视频推送"
+            value={searchOn ? '已开启 · 热门片单' : '已关闭'}
             onClick={() => push('integration')}
             chevron
           />

@@ -29,7 +29,7 @@ const KIND_LABEL: Partial<Record<Message['kind'], string>> = {
   MUSIC_INVITE: '音乐邀请',
   DOODLE: '涂鸦',
   CALL_EVENT: '通话记录',
-  SEARCH_PUSH: '搜索推送',
+  SEARCH_PUSH: 'B 站视频',
   SYSTEM: '系统消息',
 }
 
