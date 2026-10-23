@@ -129,9 +129,14 @@ function terms(query: string): string[] {
     if (t.length >= 2 && !stop.has(t) && !out.includes(t)) out.push(t)
   }
   for (const part of query.toLowerCase().split(/[\s,，。.!！?？、/|+·\-—]+/)) push(part)
-  // 中文没有空格时，整句也算一个词（例如「音乐现场」）
+  // 中文没有空格时，整句也算一个词（例如「音乐现场」）；再拆成两字词，
+  // 这样「音乐现场」能命中分区里的「音乐」，「电影解说」能命中「电影」。
+  for (const part of query.toLowerCase().split(/[\s,，。.!！?？、/|+·\-—]+/)) {
+    if (!/[\u4e00-\u9fa5]{2,}/.test(part)) continue
+    for (let i = 0; i < part.length - 1; i++) push(part.slice(i, i + 2))
+  }
   push(query.toLowerCase())
-  return out.slice(0, 8)
+  return out.slice(0, 12)
 }
 
 const hash = (s: string) => {
