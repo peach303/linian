@@ -34,7 +34,8 @@ export function quoteRefOf(m: Message): QuoteRef {
     if (!label) label = '一起听'
   } else if (m.kind === 'SEARCH_PUSH') {
     thumb = coverOf(p)
-    if (!label) label = str(p.title) || '网页'
+    /** 搜索卡正文可能是一整篇摘要；引用条只留标题（或他配的那句），不要整段搬过来 */
+    label = str(p.caption) || str(p.title) || (thumb ? '图片' : '网页')
   } else if (m.kind === 'VOICE') {
     label = label || '语音'
   } else if (m.kind === 'DOODLE') {
