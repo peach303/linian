@@ -12,6 +12,7 @@
  *   · 一起听时长 = **真的播出来的秒数**（`<audio>` 在走才累加；网易云 / 只有歌名的曲目不算）
  */
 import { onPlayer, playerState } from '@/lib/audio'
+import { pickCachedLyric, preloadTrackLyrics } from '@/lib/lyrics'
 import { SONGS, trackFromSong } from '@/lib/music'
 import { nid } from '@/lib/ids'
 import { useAppStore } from '@/store/useAppStore'
@@ -97,6 +98,7 @@ function planForTrack(track: Track) {
   // 他不在房间里就不出声；等他进来之后再排（tick 会不停地回来问）
   if (!room().heJoinedAt) return
   plannedTrackId = track.id
+  preloadTrackLyrics(track)
   const rules = useRulesStore.getState().saved.music
   const dur = playerState().duration || 0
   /** 歌长已知就按比例（20%~40% 这类），未知就退回到固定的秒数区间 */
@@ -110,7 +112,14 @@ function planForTrack(track: Track) {
     after(at(0.2, 0.4, 15, 40, `room-say-at:${track.id}`), () => {
       const t = trackOf(track.id)
       if (!t || !room().heJoinedAt) return
-      const line = makeMusicLine(t.title)
+      // 有歌词就从歌词里截一句；没有才退回「这首歌怎么样」的模板
+      const lyric =
+        t.source.kind === 'netease'
+          ? pickCachedLyric(t.source.songId, `room:${t.id}`, 'netease')
+          : t.source.kind === 'qq'
+            ? pickCachedLyric(t.source.songMid, `room:${t.id}`, 'qq')
+            : null
+      const line = lyric ? `「${lyric}」` : makeMusicLine(t.title)
       useAppStore.getState().setTrackNote(track.id, line)
       say(line)
       console.debug('[engine] 他聊了一句这首歌', t.title)

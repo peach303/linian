@@ -16,9 +16,12 @@
 import { nid } from '@/lib/ids'
 import { collectFacts, dayKeyOf, entryOf, HIS_MOODS, humanDuration, todayKey } from '@/lib/diary'
 import { useAppStore } from '@/store/useAppStore'
+import { useCardsStore } from '@/store/useCardsStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useRulesStore } from '@/store/useRulesStore'
 import {
+  cardImages,
+  cardLines,
   makeDiaryAfterMine,
   makeDiaryClose,
   makeDiaryFactIntro,
@@ -126,6 +129,20 @@ export function writeHisEntry(now = new Date(), reason: 'time' | 'after-mine' | 
     parts.push(makeDiaryFactIntro())
     parts.push(picked.join('；') + '。')
   }
+
+  // 他的日记里也要有「他自己的话」：从字卡库抽一句（种子 = 日期，刷新不会换）
+  const cards = useCardsStore.getState().cards
+  const cardPool = cardLines(cards)
+  const cardLine = cardPool.length ? seededPick(cardPool, `diary-card:${date}`) : ''
+  if (cardLine) parts.push(`今天想到一句：「${cardLine}」`)
+
+  // 配图也从字卡库抽；种子 = 日期，同一天刷新不会换图
+  const imagePool = cardImages(cards)
+  const images =
+    imagePool.length && seededHit(`diary-image:${date}`, 0.45)
+      ? [seededPick(imagePool, `diary-image-src:${date}`)!]
+      : undefined
+
   parts.push(makeDiaryClose())
 
   const entry: DiaryEntry = {
@@ -136,6 +153,7 @@ export function writeHisEntry(now = new Date(), reason: 'time' | 'after-mine' | 
     date,
     createdAt: now.toISOString(),
     facts: picked,
+    images,
     byEngine: true,
   }
   useAppStore.getState().pushDiaryEntry(entry)

@@ -103,7 +103,8 @@ export async function runSearch(
   const chat = useChatStore.getState()
   const r = rules()
   const slot = opts.slot ?? slotOf(now, r.pushIntervalMin)
-  const out = await searchWeb(topic, { count: wantedCount(), enrich: true })
+  /** 关键词 + 时效一起交给后端；默认只看最近一周，避免推旧闻 */
+  const out = await searchWeb(topic, { count: wantedCount(), freshness: r.freshness || 'oneWeek', enrich: true })
 
   if (!out.ok) {
     st.addSearchLog({
@@ -133,6 +134,7 @@ export async function runSearch(
   const body = (top.summary || top.snippet || top.name).trim()
   /** 图片卡指到「这张图出自的那个页面」；链接卡/视频卡指首位结果 */
   const linkUrl = media === 'image' ? pic?.hostPageUrl || top.url : top.url
+  const engineLabel = out.source === 'news-rss' ? '新闻 RSS' : '博查'
 
   const msg: Message = {
     id: nid('m'),
@@ -143,7 +145,7 @@ export async function runSearch(
     text: body,
     payload: {
       // 卡面直接读的字段（`MessageBubble` 的 SEARCH_PUSH 分支）
-      source: top.siteName ? `${top.siteName} · 博查` : '博查搜索',
+      source: top.siteName ? `${top.siteName} · ${engineLabel}` : `${engineLabel}搜索`,
       title: media === 'image' ? '' : top.name || body.slice(0, 40),
       url: linkUrl,
       siteName: top.siteName,
@@ -161,7 +163,7 @@ export async function runSearch(
       /** 视频卡：真时长 + 凭哪一路判成视频页 */
       clip: video ? { site: video.site, duration: video.duration, why: video.why } : undefined,
       /** 这次是哪来的：搜索词 + 用了哪个搜索服务 + 取到几条 + 形态（复盘用） */
-      search: { query: topic, engine: 'bocha', results: out.results.length, manual: Boolean(opts.manual), imageP: r.imageP, caption: Boolean(caption) },
+      search: { query: topic, engine: out.source === 'news-rss' ? 'news-rss' : 'bocha', freshness: r.freshness || 'oneWeek', results: out.results.length, manual: Boolean(opts.manual), imageP: r.imageP, caption: Boolean(caption) },
     },
     createdAt: now.toISOString(),
   }

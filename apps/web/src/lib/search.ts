@@ -60,7 +60,7 @@ export interface SearchMedia {
 }
 
 export type SearchOutcome =
-  | { ok: true; query: string; results: SearchResult[]; media?: SearchMedia }
+  | { ok: true; query: string; results: SearchResult[]; media?: SearchMedia; source?: string }
   | { ok: false; error: string; detail?: string; hint?: string }
 
 /** 失败原因 → 人话（和后端 `apps/server/bocha.mjs` 里那张表对齐） */
@@ -108,6 +108,7 @@ export async function searchWeb(
           ok?: boolean
           results?: SearchResult[]
           media?: SearchMedia
+          source?: string
           error?: string
           detail?: string
           hint?: string
@@ -116,7 +117,7 @@ export async function searchWeb(
     if (!res.ok || !j) return { ok: false, error: 'HTTP_ERROR', detail: `HTTP ${res.status}` }
     if (j.ok === false) return { ok: false, error: j.error ?? 'HTTP_ERROR', detail: j.detail ?? j.hint }
     if (!Array.isArray(j.results) || j.results.length === 0) return { ok: false, error: 'NO_RESULT' }
-    return { ok: true, query: q, results: j.results, media: j.media }
+    return { ok: true, query: q, results: j.results, media: j.media, source: j.source }
   } catch (e) {
     // 连不上后端（fetch 直接抛）/ 超时
     const aborted = (e as { name?: string })?.name === 'AbortError'

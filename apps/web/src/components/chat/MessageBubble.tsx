@@ -16,6 +16,7 @@ import { HisQuestionCard } from '@/components/chat/HisQuestionCard'
 import { callSummary } from '@/lib/engine/call'
 import { ABOUT_LABEL, MEANING_SOURCE_LABEL } from '@/lib/engine/meaning'
 import { hisPatLine, myPatLine } from '@/lib/pats'
+import { quoteCaption } from '@/lib/quote'
 import { useAppStore } from '@/store/useAppStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useViewerStore } from '@/store/useViewerStore'
@@ -93,8 +94,15 @@ export function MessageBubble({
       <div className={clsx('flex min-w-0 max-w-[70%] flex-col', mine ? 'items-end' : 'items-start')}>
         {/* 引用块 */}
         {message.quoteOf && !recalled && (
-          <div className="mb-1 max-w-full truncate rounded-md border-l-2 border-brand bg-brand-soft/50 px-2 py-1 text-[12px] text-ink-sub">
-            {message.quoteOf.text}
+          <div className="mb-1 flex max-w-full items-center gap-1.5 rounded-md border-l-2 border-brand bg-brand-soft/50 px-2 py-1 text-[12px] text-ink-sub">
+            {message.quoteOf.thumb && (
+              <img
+                src={message.quoteOf.thumb}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded object-cover ring-1 ring-black/5"
+              />
+            )}
+            <span className="min-w-0 truncate">{quoteCaption(message.quoteOf)}</span>
           </div>
         )}
 
@@ -247,6 +255,11 @@ function BubbleBody({ message, mine, onLongPress }: Omit<Props, 'peerName' | 'pe
       return (
         <div {...common}>
           <TextWithLinks text={message.text ?? ''} />
+          {Boolean(message.payload?.lyric) && (
+            <div className="mt-1 text-[10px] leading-tight opacity-55">
+              歌词 · {String((message.payload?.lyric as { title?: string }).title ?? '')}
+            </div>
+          )}
           {mine && message.status === 'SENDING' && (
             <span className="ml-1 align-[1px] text-[10px] text-ink-faint">✓</span>
           )}

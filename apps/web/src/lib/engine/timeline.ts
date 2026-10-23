@@ -34,7 +34,9 @@ import { maybeAttachMeaning } from './meaning'
 import { inQuietHours } from './proactive'
 import { pick, seededHit, seededPick, seededRange } from './seed'
 import { HIS_DOODLES } from '@/lib/doodles'
+import { quoteRefOf } from '@/lib/quote'
 import { SONGS, trackFromSong } from '@/lib/music'
+import { pickCachedLyric, preloadTrackLyrics } from '@/lib/lyrics'
 import { dayKeyOf } from '@/lib/diary'
 import { favoriteFromLetter, favoriteFromMessage, favoriteFromMoment } from '@/lib/favorites'
 import { nid } from '@/lib/ids'
@@ -345,7 +347,7 @@ export function pushHisMessage(opts: {
     text: opts.text,
     payload: opts.payload,
     proactive: opts.proactive,
-    quoteOf: q ? { id: q.id, text: q.text ?? '', senderId: q.senderId } : undefined,
+    quoteOf: q ? quoteRefOf(q) : undefined,
     createdAt: new Date().toISOString(),
   }
   const enriched = maybeAttachMeaning(msg, useRulesStore.getState().saved.chat.meaning.p)
@@ -740,7 +742,17 @@ function joinMyMusic(id: string) {
   })
   chat.patchMessage(id, { payload: { ...p, joined: { at: atIso }, listenMin } })
   if (rules.music.say.enabled && seededHit(`mu-say:${id}`, rules.music.say.p)) {
-    pushHisMessage({ text: makeMusicLine(p.title), quoteOf: msg })
+    const track = p.trackId
+      ? useAppStore.getState().room.tracks.find((t) => t.id === p.trackId)
+      : undefined
+    preloadTrackLyrics(track)
+    const lyric =
+      track?.source.kind === 'netease'
+        ? pickCachedLyric(track.source.songId, `invite:${id}`, 'netease')
+        : track?.source.kind === 'qq'
+          ? pickCachedLyric(track.source.songMid, `invite:${id}`, 'qq')
+          : null
+    pushHisMessage({ text: lyric ? `「${lyric}」` : makeMusicLine(p.title), quoteOf: msg })
   }
   console.debug('[engine] 他加入了一起听', p.title, `${listenMin} 分钟`)
 }

@@ -2,7 +2,18 @@ import { create } from 'zustand'
 import type { Conversation, DoodlePayload, ExtendAction, GiftItem, Message, QuestionAnswerRow, QuestionItem, RedPacketPayload, Track } from '@/types'
 import { MOCK_CONVERSATION, MOCK_MESSAGES } from '@/mock/chat'
 import { myPatLine } from '@/lib/pats'
-import { neteaseFallbackUrl, neteaseSongId, neteaseStreamUrl, newTrackId, resolveNetease, songLabel } from '@/lib/music'
+import {
+  neteaseFallbackUrl,
+  neteaseSongId,
+  neteaseStreamUrl,
+  newTrackId,
+  qqSongMid,
+  qqStreamUrl,
+  resolveNetease,
+  resolveQQ,
+  songLabel,
+} from '@/lib/music'
+import { quoteRefOf } from '@/lib/quote'
 import { appendMessage, markSent, recallMessage as repoRecall } from '@/lib/repo'
 import { notifyPeerMessage } from '@/lib/notify'
 import { useAppStore } from '@/store/useAppStore'
@@ -129,6 +140,44 @@ async function shareNeteaseLink(raw: string, songId: string) {
   chat.pushMessage(msg)
 }
 
+/** 把 QQ 音乐分享链接变成歌卡（与网易云走同一条落库 / 发消息路径） */
+async function shareQQLink(raw: string, songMid: string) {
+  const info = await resolveQQ(raw)
+  const title = info?.title?.trim() || `QQ 音乐歌曲 ${songMid}`
+  const artist = info?.artist?.trim() || 'QQ 音乐'
+  const cover = info?.cover || '🎵'
+  const store = useAppStore.getState()
+  const existing = store.room.tracks.find(
+    (t) => t.source.kind === 'qq' && t.source.songMid === songMid,
+  )
+  const track: Track =
+    existing ?? {
+      id: newTrackId(),
+      title,
+      artist,
+      cover,
+      source: { kind: 'qq', songMid, streamUrl: qqStreamUrl(songMid) },
+      addedBy: 'me',
+      addedAt: now(),
+    }
+  if (!existing) store.addRoomTracks([track])
+
+  const chat = useChatStore.getState()
+  const conversation = chat.conversation
+  if (!conversation) return
+  const msg: Message = {
+    id: newId(),
+    conversationId: conversation.id,
+    senderId: conversation.me.id,
+    kind: 'MUSIC_INVITE',
+    status: 'SENT',
+    text: songLabel({ title, artist }),
+    payload: { title, artist, cover, trackId: track.id, from: 'me' },
+    createdAt: now(),
+  }
+  chat.pushMessage(msg)
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   conversation: MOCK_CONVERSATION,
   messages: MOCK_MESSAGES,
@@ -151,11 +200,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const text = draft.trim()
     if (!text || !conversation) return
 
-    // 直接贴网易云分享链接 / 歌曲 id：转成歌卡，别把超长链接铺在聊天里
+    // 直接贴网易云 / QQ 音乐分享链接、歌曲 id：转成歌卡，别把超长链接铺在聊天里
     const songId = neteaseSongId(text)
     if (songId) {
       set({ draft: '', quoteOf: undefined })
       void shareNeteaseLink(text, songId)
+      return
+    }
+    const qqMid = qqSongMid(text)
+    if (qqMid) {
+      set({ draft: '', quoteOf: undefined })
+      void shareQQLink(text, qqMid)
       return
     }
 
@@ -166,7 +221,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       kind: 'TEXT',
       status: 'SENDING',
       text,
-      quoteOf: quoteOf ? { id: quoteOf.id, text: quoteOf.text, senderId: quoteOf.senderId } : undefined,
+      quoteOf: quoteOf ? quoteRefOf(quoteOf) : undefined,
       createdAt: now(),
     }
     set((st) => ({ messages: [...st.messages, msg], draft: '', quoteOf: undefined }))

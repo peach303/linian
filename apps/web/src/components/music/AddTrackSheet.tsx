@@ -1,12 +1,22 @@
 import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { hasIDB } from '@/lib/db'
-import { neteaseFallbackUrl, neteaseSongId, neteaseStreamUrl, newTrackId, resolveNetease, titleFromFileName } from '@/lib/music'
+import {
+  neteaseFallbackUrl,
+  neteaseSongId,
+  neteaseStreamUrl,
+  newTrackId,
+  qqSongMid,
+  qqStreamUrl,
+  resolveNetease,
+  resolveQQ,
+  titleFromFileName,
+} from '@/lib/music'
 import { saveAudioFile } from '@/lib/repo'
 import { useAppStore } from '@/store/useAppStore'
 import type { Track } from '@/types'
 
-type Tab = 'local' | 'url' | 'netease'
+type Tab = 'local' | 'url' | 'netease' | 'qq'
 
 /**
  * 「＋ 加歌」：三条路，都是真的
@@ -32,6 +42,12 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
   const [resolved, setResolved] = useState<{ songId: string; title: string; artist: string; cover?: string } | null>(null)
   const [nTitle, setNTitle] = useState('')
   const [nArtist, setNAritst] = useState('')
+
+  /* QQ 音乐 */
+  const [qInput, setQInput] = useState('')
+  const [qResolved, setQResolved] = useState<{ songMid: string; title: string; artist: string; cover?: string } | null>(null)
+  const [qTitle, setQTitle] = useState('')
+  const [qArtist, setQArtist] = useState('')
 
   const done = (tracks: Track[]) => {
     if (!tracks.length) return
@@ -140,6 +156,53 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
     onClose()
   }
 
+  /* ── QQ 音乐 ── */
+  async function doResolveQQ() {
+    const raw = qInput.trim()
+    if (!raw) return
+    setNote('')
+    setBusy(true)
+    setQResolved(null)
+    const r = await resolveQQ(raw)
+    setBusy(false)
+    if (r?.songMid) {
+      setQResolved(r)
+      setQTitle(r.title || '')
+      setQArtist(r.artist || '')
+      return
+    }
+    const mid = qqSongMid(raw)
+    if (mid) {
+      setQResolved({ songMid: mid, title: '', artist: '' })
+      setQTitle('')
+      setQArtist('')
+      setNote('没连上解析服务，不过这首歌会走 QQ 音乐代理；把歌名歌手补一下就行。VIP 曲目需要先在设置里登录 QQ 音乐。')
+      return
+    }
+    setNote('认不出 songmid：可以贴 y.qq.com 的歌曲分享链接，或者 songDetail/xxx 这样的地址。')
+  }
+
+  function addQQ() {
+    if (!qResolved) return
+    const id = newTrackId()
+    done([
+      {
+        id,
+        title: qTitle.trim() || `QQ 音乐歌曲 ${qResolved.songMid}`,
+        artist: qArtist.trim() || 'QQ 音乐',
+        cover: qResolved.cover || '🎵',
+        source: {
+          kind: 'qq',
+          songMid: qResolved.songMid,
+          streamUrl: qqStreamUrl(qResolved.songMid),
+        },
+        addedBy: 'me',
+        addedAt: new Date().toISOString(),
+      },
+    ])
+    onClose()
+  }
+
   const input2 = 'w-full rounded-lg bg-surface px-3 py-2 text-[13px] text-ink outline-none ring-1 ring-hairline focus:ring-brand placeholder:text-ink-faint'
 
   return (
@@ -159,6 +222,7 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
               ['local', '本机文件'],
               ['url', '音频直链'],
               ['netease', '网易云'],
+              ['qq', 'QQ 音乐'],
             ] as [Tab, string][]
           ).map(([k, label]) => (
             <button
@@ -263,6 +327,47 @@ export function AddTrackSheet({ onClose, onAdded }: { onClose: () => void; onAdd
             <p className="text-[11px] leading-relaxed text-ink-faint">
               会通过我们自己的代理取网易云的公开音频流，在应用里直接播；进度和「一起听了多久」都能算。
               版权 / VIP / 地区受限的曲子仍然可能只给试听或直接播不了，那时播放器会明说，不会假装在放。
+            </p>
+          </div>
+        )}
+
+        {tab === 'qq' && (
+          <div className="space-y-2">
+            <input
+              className={input2}
+              placeholder="贴 QQ 音乐分享链接，或 songDetail/…"
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
+            />
+            <button
+              className="tap w-full rounded-lg bg-surface py-2.5 text-[13px] text-brand-deep ring-1 ring-hairline"
+              disabled={busy || !qInput.trim()}
+              onClick={() => void doResolveQQ()}
+            >
+              {busy ? '正在认这首歌…' : '认一下这首歌'}
+            </button>
+
+            {qResolved && (
+              <div className="space-y-2 rounded-xl bg-surface p-3 ring-1 ring-hairline">
+                <div className="flex items-center gap-2">
+                  {qResolved.cover ? (
+                    <img src={qResolved.cover} alt="" className="h-10 w-10 rounded object-cover" />
+                  ) : (
+                    <span className="grid h-10 w-10 place-items-center rounded bg-page text-[18px]">🎵</span>
+                  )}
+                  <span className="truncate text-[11px] text-ink-faint">songmid {qResolved.songMid}</span>
+                </div>
+                <input className={input2} placeholder="歌名" value={qTitle} onChange={(e) => setQTitle(e.target.value)} />
+                <input className={input2} placeholder="歌手" value={qArtist} onChange={(e) => setQArtist(e.target.value)} />
+                <button className="tap w-full rounded-lg bg-brand py-2.5 text-[14px] text-white" onClick={addQQ}>
+                  加进歌单
+                </button>
+              </div>
+            )}
+
+            <p className="text-[11px] leading-relaxed text-ink-faint">
+              QQ 音乐的 VIP 曲目需要先在「设置 → 接入」里保存 QQ 音乐 Cookie；保存后由代理换 vkey，网页里不会出现 Cookie。
+              没登录时只有公开曲目能播，播不了会直接说。
             </p>
           </div>
         )}

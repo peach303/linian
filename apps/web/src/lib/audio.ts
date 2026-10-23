@@ -7,7 +7,7 @@
  * 本机文件从 IndexedDB 取 Blob → `URL.createObjectURL`，用完 revoke，不堆内存。
  */
 import { readAudioFile } from './repo'
-import { playableKind } from './music'
+import { neteaseFallbackUrl, neteaseStreamUrl, playableKind, qqStreamUrl } from './music'
 import type { Track } from '@/types'
 
 export interface PlayerState {
@@ -79,8 +79,10 @@ function el(): HTMLAudioElement {
       loading: false,
       error:
         currentTrack?.source.kind === 'netease'
-          ? '这首网易云播不了（可能版权 / VIP / 地区受限）'
-          : '这首播不了（文件不在这台设备上，或链接失效）',
+          ? '这首网易云播不了（可能版权 / VIP / 地区受限；登录后可再试）'
+          : currentTrack?.source.kind === 'qq'
+            ? '这首 QQ 音乐播不了（先登录 QQ 音乐，或这首受 VIP / 版权 / 地区限制）'
+            : '这首播不了（文件不在这台设备上，或链接失效）',
     })
   })
   return a
@@ -107,13 +109,12 @@ export async function loadTrack(track: Track): Promise<void> {
     fallbackQueue = []
     src = track.source.url
   } else if (track.source.kind === 'netease') {
-    src = track.source.streamUrl ?? ''
-    fallbackQueue = track.source.fallbackUrl ? [track.source.fallbackUrl] : []
-    if (!src) {
-      a.removeAttribute('src')
-      emit({ loading: false, error: undefined })
-      return
-    }
+    // 每次载入都现取地址：设置里刚登录 / 退出，session 会跟着变
+    src = neteaseStreamUrl(track.source.songId)
+    fallbackQueue = [neteaseFallbackUrl(track.source.songId)]
+  } else if (track.source.kind === 'qq') {
+    src = qqStreamUrl(track.source.songMid)
+    fallbackQueue = []
   } else if (track.source.kind === 'local') {
     fallbackQueue = []
     const blob = await readAudioFile(track.source.blobKey)

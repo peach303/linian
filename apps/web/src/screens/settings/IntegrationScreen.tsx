@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { NavBar } from '@/components/common/NavBar'
+import { MusicAccountCard } from '@/components/settings/MusicAccountCard'
 import { API_ENABLED, PROXY_MODE } from '@/lib/deploy'
 import { pushNow } from '@/lib/engine/search'
 import { searchReason, searchWeb, type SearchResult } from '@/lib/search'
@@ -654,6 +655,9 @@ export function IntegrationScreen() {
             去概率调节引擎 ›
           </button>
         </Card>
+
+        {/* ── 音乐账号 ── */}
+        <MusicAccountCard />
 
         {/* ── 搜索轨迹 ── */}
         <Card

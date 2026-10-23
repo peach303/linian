@@ -61,6 +61,18 @@ export interface UserProfile {
   isDream: boolean
 }
 
+/** 引用块只存一份轻量快照：文字 + 一张小图（图片 / 表情包 / 歌卡封面） */
+export interface QuoteRef {
+  id: string
+  senderId: string
+  text?: string
+  kind?: MessageKind
+  /** 图片 / 表情包 / 封面地址（dataURL 或 http） */
+  thumb?: string
+  /** 图片类没有文字时的说明，例如「图片」「表情包」「语音」 */
+  label?: string
+}
+
 export interface Message {
   id: string
   conversationId: string
@@ -75,7 +87,7 @@ export interface Message {
   isVoice?: boolean
   audioUrl?: string
   audioDurationMs?: number
-  quoteOf?: Pick<Message, 'id' | 'text' | 'senderId'>
+  quoteOf?: QuoteRef
   recalled?: boolean
   emotionTags?: string[]
   latencyMs?: number
@@ -368,13 +380,15 @@ export interface DoodlePayload {
  * 一首歌的来源
  *  - `local`   本机音频文件（Blob 存在 IndexedDB，**只在这台设备上**）
  *  - `url`     音频直链（任何合法可播的 http(s) 地址）
- *  - `netease` 网易云（用**官方外链播放器**播，进度/音量在它自己的控件里）
+ *  - `netease` 网易云（代理音频流；登录后代理解锁 VIP / 高音质）
+ *  - `qq`      QQ 音乐（代理音频流；需要先在设置里保存 QQ 音乐 Cookie）
  *  - `title`   只有歌名（他推来的、或她只填了歌名）→ 显示，但不假装能播
  */
 export type TrackSource =
   | { kind: 'local'; blobKey: string; mime?: string; size?: number }
   | { kind: 'url'; url: string }
   | { kind: 'netease'; songId: string; /** 代理音频流；旧记录没有就退回官方外链播放器 */ streamUrl?: string; /** 代理/镜像失败时的官方直链 */ fallbackUrl?: string }
+  | { kind: 'qq'; songMid: string; /** 代理音频流；登录后才会带 session */ streamUrl?: string }
   | { kind: 'title' }
 
 export interface Track {
@@ -664,6 +678,8 @@ export interface DiaryEntry {
   editedAt?: string
   /** 他的留言里提到的、当天真的发生过的事（只记录，界面上写「取材自今天的真实记录」） */
   facts?: string[]
+  /** 配图：从字卡库里抽的真实图片（旧日记没有这个字段） */
+  images?: string[]
   /** 这条是引擎按天生成的（种子 = 日期）→ 刷新不重掷 */
   byEngine?: boolean
   /** 公开 / 私密（默认公开；私密只有我看得到，但他有 30% 概率破解） */

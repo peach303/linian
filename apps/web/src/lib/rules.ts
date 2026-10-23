@@ -32,8 +32,9 @@ export const DEFAULT_RULES: RuleConfig = {
   proactive: {
     message: {
       enabled: true,
-      interval: [1800, 7200],
-      dailyLimit: [1, 6],
+      /** 10 分钟 ~ 1 小时：以前 30 分钟 ~ 2 小时 + 每天 1~6 条，实际很容易一整天都不冒头 */
+      interval: [600, 3600],
+      dailyLimit: [2, 8],
       cancelIfRepliedWithin: 60,
       quietHours: ['00:30', '07:30'],
     },
@@ -94,6 +95,7 @@ export const DEFAULT_RULES: RuleConfig = {
     say: t(0.7),
     listenMin: [8, 45],
     shareBack: t(0.35),
+    lyric: t(0.3),
     /** 他主动邀请我一起听 */
     inviteMe: { ...t(0.04), cooldownMin: 720 },
   },
@@ -118,12 +120,14 @@ export const DEFAULT_RULES: RuleConfig = {
   search: {
     enabled: false,
     p: 0.06,
-    topics: ['新闻', '搞笑', '美食', '猫狗', '电影', '摄影', '音乐', '风景', '游戏', '日常'],
+    topics: ['今天的新闻', '最近的热点', '本周新电影', '最近好听的歌', '本地天气', '可爱猫狗'],
     pushIntervalMin: 240,
     /** 有可用图时，掷中这个概率就发**图片卡**（不然是链接卡） */
     imageP: 0.35,
     /** 推卡片时配一句真人口吻的附言（只说不评价内容的那种） */
     captionP: 0.55,
+    /** 默认只看最近一周，避免推几个月前的旧闻 */
+    freshness: 'oneWeek',
   },
   companion: {
     join: t(0.8),
@@ -181,6 +185,8 @@ export type FieldKind =
   | 'bool' // 开关
   | 'timeRange' // [HH:mm, HH:mm]
   | 'tags' // 字符串多选
+  | 'keywords' // 自由输入的关键词（可增删）
+  | 'select' // 单选下拉
 
 export type FieldUnit = 'sec' | 'min' | 'hour' | 'count' | 'char' | 'x' | 'money'
 
@@ -199,8 +205,10 @@ export interface FieldMeta {
   child?: boolean
   /** 依赖的开关路径 */
   requires?: string
-  /** 标签可选项（kind = tags） */
+  /** 标签 / 下拉可选项（kind = tags / select） */
   options?: string[]
+  /** 下拉选项的人话标签（值 → 显示名） */
+  optionLabels?: Record<string, string>
 }
 
 export interface RuleGroup {
@@ -235,6 +243,21 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'chat.pickup', label: '拾取', desc: '抽中则把你这句话存进他的字卡库', kind: 'prob' },
       { path: 'chat.typingIndicator', label: '「正在输入」', desc: '是否显示打字气泡', kind: 'bool' },
       { path: 'chat.maxLengthPerSentence', label: '单句最大长度', desc: '超出自动截断', kind: 'int', min: 10, max: 200, step: 5, unit: 'char' },
+    ],
+  },
+  {
+    key: 'search',
+    label: '联网搜索',
+    icon: '🔎',
+    blurb: '他按你写的关键词去搜，只推真搜到的结果；默认只看最近一周，避免旧闻',
+    fields: [
+      { path: 'search.enabled', label: '联网搜索推送', desc: '关闭后他不会再往聊天里推网页', kind: 'bool' },
+      { path: 'search.p', label: '每个间隔搜一次的概率', desc: '和「搜索关键词」一起用；没配 Key 时只记轨迹，不伪造结果', kind: 'p', requires: 'search.enabled' },
+      { path: 'search.topics', label: '搜索关键词', desc: '他自己会搜的词。写你关心的话题、新闻方向、想让他留意的店 / 城市 / 人名都可以；一行一个', kind: 'keywords', requires: 'search.enabled' },
+      { path: 'search.freshness', label: '只看多久以内', desc: '博查的时效过滤；想追新闻选「最近一天 / 最近一周」', kind: 'select', options: ['oneDay', 'oneWeek', 'oneMonth', 'oneYear', 'noLimit'], optionLabels: { oneDay: '最近一天', oneWeek: '最近一周', oneMonth: '最近一月', oneYear: '最近一年', noLimit: '不限时间' }, requires: 'search.enabled' },
+      { path: 'search.pushIntervalMin', label: '两次搜索至少隔多久', desc: '分钟；同一间隔里最多试一次', kind: 'int', min: 10, max: 10080, step: 10, unit: 'min', requires: 'search.enabled' },
+      { path: 'search.imageP', label: '有图时发图片卡', desc: '图是服务端真取过的；取不到就退回链接卡', kind: 'p', requires: 'search.enabled' },
+      { path: 'search.captionP', label: '配一句附言', desc: '只说他看到什么，不评价内容', kind: 'p', requires: 'search.enabled' },
     ],
   },
   {
@@ -308,7 +331,8 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'music.join.enabled', label: '音乐 · 会加入一起听', desc: '不加入的话歌单会一直挂着', kind: 'bool' },
       { path: 'music.join.p', label: '音乐 · 加入概率', kind: 'p', requires: 'music.join.enabled' },
       { path: 'music.join.delay', label: '音乐 · 加入延迟', desc: '最快 / 最慢', kind: 'range', min: 3, max: 7200, step: 1, unit: 'sec', child: true, requires: 'music.join.enabled' },
-      { path: 'music.say', label: '音乐 · 说一句', desc: '听完对这首歌的看法', kind: 'prob', child: true, requires: 'music.join.enabled' },
+      { path: 'music.say', label: '音乐 · 说一句', desc: '听完对这首歌的看法；有歌词时会优先从歌词里截一句', kind: 'prob', child: true, requires: 'music.join.enabled' },
+      { path: 'music.lyric', label: '音乐 · 歌词当一句话', desc: '他主动发消息时，偶尔把最近一首歌（网易云 / QQ 音乐）的歌词截一句发过来（只从真歌词里截）', kind: 'prob' },
       { path: 'music.listenMin', label: '音乐 · 一起听多久', desc: '最少 / 最多', kind: 'range', min: 1, max: 600, step: 1, unit: 'min', child: true, requires: 'music.join.enabled' },
       { path: 'music.shareBack', label: '音乐 · 他回推一首歌', kind: 'prob', child: true, requires: 'music.join.enabled' },
       { path: 'music.inviteMe', label: '音乐 · 他主动邀请你', desc: '不等你先邀请；会从你的歌单里挑一首，或推他自己的歌', kind: 'prob' },
@@ -385,12 +409,7 @@ export const RULE_GROUPS: RuleGroup[] = [
       { path: 'voice.maxCharsPerVoice', label: '单条语音字数上限', kind: 'int', min: 10, max: 300, step: 10, unit: 'char', child: true, requires: 'voice.enabled' },
       { path: 'voice.pace', label: '语速', kind: 'number', min: 0.5, max: 2, step: 0.05, unit: 'x', child: true, requires: 'voice.enabled' },
       { path: 'voice.emotionMapping', label: '按情绪变调', desc: '用情绪标签驱动语气', kind: 'bool', child: true, requires: 'voice.enabled' },
-      { path: 'search.enabled', label: '联网搜索推送', desc: '他真去网上搜，搜到才推到聊天里（Key 在「设置 → 接入」填博查；搜不到就一条都不推，只记轨迹）。卡片的形态由内容说了算：链接卡 / 图片卡 / 撞上视频站才是视频卡（博查几乎不返回视频页，所以那种很少见）', kind: 'bool' },
-      { path: 'search.p', label: '推送概率', desc: '每个推送间隔里掷一次（种子 = 日期 + 间隔槽）', kind: 'p', requires: 'search.enabled' },
-      { path: 'search.topics', label: '推送主题', kind: 'tags', options: ['新闻', '搞笑', '美食', '猫狗', '电影', '摄影', '音乐', '风景', '游戏', '日常', '趣事', '天气', '书', '梗图', '穿搭', '旅行'], child: true, requires: 'search.enabled' },
-      { path: 'search.pushIntervalMin', label: '推送间隔', kind: 'int', min: 10, max: 2880, step: 10, unit: 'min', child: true, requires: 'search.enabled' },
-      { path: 'search.imageP', label: '发图概率', desc: '搜到可用图时，掷中这个就发图片卡（图由服务端真取过一遍；取不到就不配图）', kind: 'p', child: true, requires: 'search.enabled' },
-      { path: 'search.captionP', label: '配一句话概率', desc: '推卡片时配「刚刷到这个」这种附言（只说不评价内容 —— 卡片上的字全是上游的）', kind: 'p', child: true, requires: 'search.enabled' },
+
     ],
   },
   {
@@ -487,7 +506,25 @@ export function withRuleDefaults(stored: unknown): RuleConfig {
     }
     return over
   }
-  return merge(structuredClone(DEFAULT_RULES), stored) as RuleConfig
+  const out = merge(structuredClone(DEFAULT_RULES), stored) as RuleConfig
+
+  /**
+   * 旧默认值迁移：只改「还停在旧默认」的那一份，用户自己调过的不动。
+   * 之前的主动消息太稀疏（30 分钟~2 小时、每天 1~6 条），很多人一天都收不到一条。
+   */
+  const msg = out.proactive?.message
+  if (msg) {
+    if (msg.interval?.[0] === 1800 && msg.interval?.[1] === 7200) msg.interval = [600, 3600]
+    if (msg.dailyLimit?.[0] === 1 && msg.dailyLimit?.[1] === 6) msg.dailyLimit = [2, 8]
+  }
+
+  /** 旧版搜索主题是一组固定标签；还停在旧默认的，换成更能直接搜的关键词 */
+  const oldTopics = ['新闻', '搞笑', '美食', '猫狗', '电影', '摄影', '音乐', '风景', '游戏', '日常']
+  if (Array.isArray(out.search?.topics) && out.search.topics.length === oldTopics.length &&
+      oldTopics.every((t, i) => out.search.topics[i] === t)) {
+    out.search.topics = [...DEFAULT_RULES.search.topics]
+  }
+  return out
 }
 
 export function getAtPath(root: unknown, path: string): unknown {

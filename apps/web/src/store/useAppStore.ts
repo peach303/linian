@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { applyTheme } from '@/lib/theme'
 import { nid } from '@/lib/ids'
 import { defaultPats, makePat, migratePats } from '@/lib/pats'
-import { neteaseFallbackUrl, neteaseStreamUrl } from '@/lib/music'
+import { neteaseFallbackUrl, neteaseStreamUrl, qqStreamUrl } from '@/lib/music'
+import { preloadTrackLyrics } from '@/lib/lyrics'
 import { DEFAULT_GIFTS } from '@/lib/gifts'
 import { DEFAULT_FAVORITE_REASONS } from '@/lib/favorites'
 import {
@@ -575,7 +576,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   /* ── 一起听（音乐房间）── */
   room: emptyRoom(),
-  addRoomTracks: (tracks) =>
+  addRoomTracks: (tracks) => {
+    // 加进歌单就先拉歌词，等他聊到这首歌 / 主动发消息时不用现等
+    for (const t of tracks) preloadTrackLyrics(t)
     set((st) => {
       const room: MusicRoom = {
         ...st.room,
@@ -583,7 +586,8 @@ export const useAppStore = create<AppState>((set) => ({
       }
       persist({ musicRoom: room })
       return { room }
-    }),
+    })
+  },
   removeRoomTrack: (id) =>
     set((st) => {
       const doomed = st.room.tracks.find((t) => t.id === id)
@@ -1223,9 +1227,19 @@ export const useAppStore = create<AppState>((set) => ({
                 fallbackUrl: t.source.fallbackUrl ?? neteaseFallbackUrl(t.source.songId),
               },
             }
-          : t,
+          : t.source.kind === 'qq'
+            ? {
+                ...t,
+                source: {
+                  ...t.source,
+                  streamUrl: t.source.streamUrl ?? qqStreamUrl(t.source.songMid),
+                },
+              }
+            : t,
       ),
     }
+    // 最近几首网易云：开机顺手拉一下歌词，主动消息 / 一起听才有得截
+    room.tracks.slice(-3).forEach(preloadTrackLyrics)
     set({
       ready: true,
       themeKey: s.themeKey,

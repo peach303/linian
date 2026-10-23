@@ -15,6 +15,7 @@ import { hisPatLine } from '@/lib/pats'
 import { useAppStore } from '@/store/useAppStore'
 import { composeSentence, inferEmotion, isPinyinCard, toPinyin } from './compose'
 import { emotionFromTags } from '@/lib/voice'
+import { hisMoodAt, hisMoodTags } from './mood'
 import type { Card } from '@/types/cards'
 import type { Message, MessageKind } from '@/types'
 import type { RuleConfig } from '@/types/rules'
@@ -217,10 +218,20 @@ export function planReply(input: PlanInput): ReplyPlan {
     null,
   )
 
-  /* ── 4. 多字卡拼接 ── */
-  const multi = rollToggle(c.multiCard)
+  /* ── 4. 多字卡拼接 ──
+     只让「文字」载体连发多张；颜文字 / 表情包 / 图片一次只发一个。
+     以前抽中 2~4 张颜文字会连着发三个，看起来像卡住了。 */
+  const multi = rollToggle(c.multiCard) && carrier.key === 'text'
   const wantCount = multi ? Math.max(1, Math.round(rnd(c.multiCard.count[0], c.multiCard.count[1]))) : 1
-  step('多字卡拼接', multi ? `命中 → 取 ${wantCount} 张` : '未命中 → 单张', multi)
+  step(
+    '多字卡拼接',
+    carrier.key !== 'text'
+      ? `抽中「${CARRIER_LABEL[carrier.key] ?? carrier.key}」→ 一次只发 1 张`
+      : multi
+        ? `命中 → 取 ${wantCount} 张`
+        : '未命中 → 单张',
+    multi,
+  )
 
   const drawn = drawCards(carrierCards, Math.min(wantCount, Math.max(carrierCards.length, 1)))
   const cardIds = drawn.map((d) => d.id)
@@ -241,7 +252,9 @@ export function planReply(input: PlanInput): ReplyPlan {
   step('自由组句', lockedCard ? '抽中的卡禁止组句 → 原样发' : freeSentence ? '命中 → 拼接/造句' : '未命中 → 原样发', lockedCard ? false : freeSentence)
   step('标点符号', punct ? '开启' : '关闭 → 整句去标点', null)
 
-  const useCompose = !emptyPool && !lockedCard && (freeSentence || carrier.key === 'text' || carrier.key === 'sticker')
+  /** 只有「文字」池允许造句/拼接；颜文字、表情包、图片一律原样发 1 张。
+      以前 sticker 也会走组句，自定义表情包会被拼成一句文字，图就丢了。 */
+  const useCompose = !emptyPool && !lockedCard && carrier.key === 'text'
 
   let via: 'card-join' | 'template' | 'pinyin' = 'card-join'
   if (useCompose) {
@@ -383,14 +396,30 @@ export function planReply(input: PlanInput): ReplyPlan {
     null,
   )
 
-  /* ── 8.5 情绪 / 心意标签 ── */
+  /* ── 8.5 他的心情 + 读到的情绪 ──
+     他先有自己的心情（按日期 + 情绪持续时段抽签），再看要不要把「读到你」也贴上。
+     以前这里只看我上一句，等于他没有自己的情绪。 */
+  const hisMood = hisMoodAt(new Date(), rules.emotion.decayHours)
+  step(
+    '他的心情',
+    `${hisMood.emoji} ${hisMood.label} —— ${hisMood.note}`,
+    rules.emotion.enabled ? true : null,
+  )
   const moodTarget = finalItems.find((i) => i.kind !== 'PAT')
   if (moodTarget && rules.emotion.enabled && roll(rules.emotion.triggerP)) {
-    const tags = inferEmotion(myText)
-    moodTarget.emotionTags = tags
-    step('情绪标签', `命中 → 读到「${tags.join(' / ')}」`, true)
+    const readTags = proactive || !myText.trim() ? [] : inferEmotion(myText)
+    const tags = [
+      ...hisMoodTags(hisMood),
+      ...readTags.map((t) => `读到你：${t}`),
+    ]
+    moodTarget.emotionTags = [...new Set(tags)]
+    step(
+      '情绪标签',
+      `命中 → ${hisMoodTags(hisMood).join(' / ')}${readTags.length ? `；读到你「${readTags.join(' / ')}」` : ''}`,
+      true,
+    )
   } else {
-    step('情绪标签', rules.emotion.enabled ? '未命中' : '未开启', rules.emotion.enabled ? false : null)
+    step('情绪标签', rules.emotion.enabled ? '未命中（他的心情仍然写在轨迹里）' : '未开启', rules.emotion.enabled ? false : null)
   }
 
   /* ── 9. 语音旁路：命中就把已经抽好的某一条改成一则语音 ──

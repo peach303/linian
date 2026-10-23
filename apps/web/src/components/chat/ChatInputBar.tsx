@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import { VoiceRecorderButton } from '@/components/chat/VoiceRecorderButton'
 import { cardHash, makeCard } from '@/lib/cards'
 import { pickSticker } from '@/lib/file'
+import { quoteCaption, quoteRefOf } from '@/lib/quote'
 import { nid } from '@/lib/ids'
 import { useCardsStore } from '@/store/useCardsStore'
 import { useChatStore } from '@/store/useChatStore'
@@ -134,7 +135,13 @@ export function ChatInputBar() {
       {/* 引用条 */}
       {quoteOf && (
         <div className="flex items-center gap-2 border-b border-hairline px-3 py-1.5 text-[12px] text-ink-sub">
-          <span className="truncate">引用：{quoteOf.text}</span>
+          {(() => {
+            const q = quoteRefOf(quoteOf)
+            return q.thumb ? (
+              <img src={q.thumb} alt="" className="h-9 w-9 shrink-0 rounded object-cover ring-1 ring-black/5" />
+            ) : null
+          })()}
+          <span className="min-w-0 truncate">引用：{quoteCaption(quoteRefOf(quoteOf))}</span>
           <button className="tap ml-auto text-ink-faint" onClick={() => setQuote(undefined)}>
             ✕
           </button>

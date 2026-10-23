@@ -8,9 +8,11 @@ import { MessageBubble } from '@/components/chat/MessageBubble'
 import { TypingIndicator } from '@/components/chat/TypingIndicator'
 import { formatBubbleTime, shouldShowTime } from '@/lib/time'
 import { bgCss } from '@/lib/appearance'
+import { hisMoodAt } from '@/lib/engine/mood'
 import { useAppStore } from '@/store/useAppStore'
 import { useAppearanceStore } from '@/store/useAppearanceStore'
 import { useChatStore } from '@/store/useChatStore'
+import { useRulesStore } from '@/store/useRulesStore'
 import type { Message } from '@/types'
 
 const chat = useChatStore
@@ -34,6 +36,8 @@ export function ChatScreen() {
   const messages = chat((s) => s.messages)
   const peerTyping = chat((s) => s.peerTyping)
   const openExtend = chat((s) => s.openExtend)
+  const moodDecay = useRulesStore((s) => s.saved.emotion.decayHours)
+  const hisMood = hisMoodAt(new Date(), moodDecay)
 
   /* 新消息自动滚底。
      注意：不能用 scrollIntoView（它会连带把外层页面也滚走），只滚消息容器。
@@ -104,7 +108,13 @@ export function ChatScreen() {
             >
               <Avatar src={dream.avatarUrl} name={dream.nickname} size={24} />
             </button>
-            <span className="max-w-[120px] truncate">{dream.nickname}</span>
+            <span className="max-w-[88px] truncate">{dream.nickname}</span>
+            <span
+              className="rounded-full bg-brand-soft/80 px-1.5 py-0.5 text-[9px] leading-none text-brand-deep"
+              title={`${hisMood.note} · 大约每 ${moodDecay} 小时可能换一种心情`}
+            >
+              {hisMood.emoji} {hisMood.label}
+            </span>
             <Avatar src={me.avatarUrl} name={me.nickname} size={24} />
           </span>
         }

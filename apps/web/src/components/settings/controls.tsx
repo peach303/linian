@@ -194,6 +194,72 @@ function RangeControl({
   )
 }
 
+/* ───────────────────────── 自由关键词 ───────────────────────── */
+
+/** 输入一行 / 用逗号分隔，回车加入；点 × 删除 */
+function KeywordsControl({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: unknown
+  onChange: (v: string[]) => void
+  disabled?: boolean
+}) {
+  const [text, setText] = useState('')
+  const list = (Array.isArray(value) ? value : []).map(String).filter(Boolean)
+  const add = () => {
+    const next = text
+      .split(/[,，、;；\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!next.length) return
+    onChange([...new Set([...list, ...next])].slice(0, 50))
+    setText('')
+  }
+  const remove = (word: string) => onChange(list.filter((x) => x !== word))
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5">
+        {list.map((word) => (
+          <span
+            key={word}
+            className="inline-flex max-w-full items-center gap-1 rounded-full bg-brand-soft px-2.5 py-1 text-[12px] text-brand-deep"
+          >
+            <span className="truncate">{word}</span>
+            <button className="tap shrink-0 text-ink-faint" disabled={disabled} onClick={() => remove(word)}>
+              ×
+            </button>
+          </span>
+        ))}
+        {!list.length && <span className="text-[12px] text-ink-faint">还没有关键词，下面输入一个再加</span>}
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        <input
+          value={text}
+          disabled={disabled}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              add()
+            }
+          }}
+          placeholder="例如：最近的人工智能新闻"
+          className="min-w-0 flex-1 rounded-lg bg-page px-2.5 py-1.5 text-[13px] text-ink outline-none ring-1 ring-hairline placeholder:text-ink-faint focus:ring-brand disabled:opacity-40"
+        />
+        <button
+          className="tap shrink-0 rounded-lg bg-brand px-3 py-1.5 text-[12px] text-white disabled:opacity-40"
+          disabled={disabled || !text.trim()}
+          onClick={add}
+        >
+          加入
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /* ───────────────────────── 字段分发 ───────────────────────── */
 
 interface FieldProps {
@@ -376,6 +442,49 @@ export function RuleField({ field, value, onChange, active, disabledHint }: Fiel
                 className="rounded-lg bg-page px-2 py-1.5 text-[13px] tabular-nums text-ink outline-none ring-1 ring-hairline focus:ring-brand"
               />
             </div>
+          </div>
+          {hint}
+        </div>
+      )
+    }
+
+    /* 自由关键词 */
+    case 'keywords':
+      return (
+        <div className="py-3">
+          <div className={clsx(disabled && 'opacity-40')}>
+            <FieldHead label={field.label} desc={field.desc} child={field.child} />
+            <div className={clsx('mt-2', field.child && 'pl-3')}>
+              <KeywordsControl value={value} onChange={(v) => onChange(v)} disabled={disabled} />
+            </div>
+          </div>
+          {hint}
+        </div>
+      )
+
+    /* 单选下拉 */
+    case 'select': {
+      const v = String(value ?? '')
+      const options = field.options ?? []
+      return (
+        <div className="py-3">
+          <div className={clsx(disabled && 'opacity-40')}>
+            <FieldHead label={field.label} desc={field.desc} child={field.child} />
+            <select
+              value={v}
+              disabled={disabled}
+              onChange={(e) => onChange(e.target.value)}
+              className={clsx(
+                'mt-2 w-full rounded-lg bg-page px-2.5 py-2 text-[13px] text-ink outline-none ring-1 ring-hairline focus:ring-brand',
+                field.child && 'ml-3 w-[calc(100%-0.75rem)]',
+              )}
+            >
+              {options.map((o) => (
+                <option key={o} value={o}>
+                  {field.optionLabels?.[o] ?? o}
+                </option>
+              ))}
+            </select>
           </div>
           {hint}
         </div>

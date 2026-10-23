@@ -209,6 +209,18 @@ export function DiaryScreen() {
                     <span className="text-[18px] leading-none">{entry.mood}</span>
                     <p className="min-w-0 flex-1 whitespace-pre-wrap text-[13px] leading-[1.85] text-ink">{entry.text}</p>
                   </div>
+                  {!!entry.images?.length && (
+                    <div className="mt-2 flex gap-1.5 overflow-x-auto">
+                      {entry.images.map((src) => (
+                        <img
+                          key={src}
+                          src={src}
+                          alt="日记配图"
+                          className="h-24 w-24 shrink-0 rounded-lg object-cover ring-1 ring-hairline"
+                        />
+                      ))}
+                    </div>
+                  )}
                   {!!entry.facts?.length && (
                     <div className="mt-2 rounded-xl bg-brand-soft/50 p-2.5">
                       <p className="text-[10px] text-ink-faint">取材自今天的真实记录（不是我编的）：</p>
@@ -326,6 +338,18 @@ function MyEntryCard({
         </span>
       </div>
       <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-[1.85] text-ink">{entry.text}</p>
+      {!!entry.images?.length && (
+        <div className="mt-2 flex gap-1.5 overflow-x-auto">
+          {entry.images.map((src) => (
+            <img
+              key={src}
+              src={src}
+              alt="日记配图"
+              className="h-20 w-20 shrink-0 rounded-lg object-cover ring-1 ring-hairline"
+            />
+          ))}
+        </div>
+      )}
       {entry.visibility === 'private' && (
         <div
           className={clsx(

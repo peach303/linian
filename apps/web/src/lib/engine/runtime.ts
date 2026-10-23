@@ -17,6 +17,8 @@ import { useChatStore } from '@/store/useChatStore'
 import { useRulesStore } from '@/store/useRulesStore'
 import { useIntegrationsStore } from '@/store/useIntegrationsStore'
 import { synthesize, type VoiceAudio, type VoiceEmotion } from '@/lib/voice'
+import { quoteRefOf } from '@/lib/quote'
+import { pickCachedLyric } from '@/lib/lyrics'
 import { INTEGRATIONS } from '@/lib/integrations'
 import type { Message } from '@/types'
 import type { ReplyTrace } from '@/types/engine'
@@ -24,13 +26,28 @@ import type { ReplyTrace } from '@/types/engine'
 /** 兼容旧引用：接入开关现在住在 `lib/integrations.ts`（由接入设置写入） */
 export { INTEGRATIONS }
 
-/** 发送排程（新消息到来可整体取消重规划） */
+/** 主动消息 / 已读回执用的排程 */
 const sendTimers = new Set<ReturnType<typeof setTimeout>>()
 /** 撤回等「已发出消息」的事后动作，不随重规划取消 */
 const houseTimers = new Set<ReturnType<typeof setTimeout>>()
 /** 已参与过抽签的消息 id（防重复触发） */
 const seen = new Set<string>()
 let attached = false
+
+/**
+ * 回复队列
+ *
+ * 以前「我发新消息」会 cancel 掉上一轮，所以连发两句时第一句可能永远等不到回复。
+ * 现在每句话都排进队列，他按顺序一轮一轮回；语音合成也在队列里等，不会互相顶掉。
+ */
+interface ReplyJob {
+  msg: Message
+  plan: ReplyPlan
+  token: number
+}
+const replyQueue: ReplyJob[] = []
+let processingReply = false
+let runToken = 0
 
 const later = (ms: number, fn: () => void) => {
   const t = setTimeout(() => {
@@ -48,21 +65,21 @@ const laterHouse = (ms: number, fn: () => void) => {
   houseTimers.add(t)
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
 const newId = () => `m_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
-/** 取消还没发出去的部分（我连着发消息时，让他只回最新的那句） */
+/** 清空还没发出的回复（清空聊天 / 解绑时用） */
 export function cancelPlan() {
-  planSeq++ // 让「已经拿到音频、正在 await」的那条作废
+  runToken++
+  replyQueue.length = 0
+  processingReply = false
   for (const t of sendTimers) clearTimeout(t)
   sendTimers.clear()
   useChatStore.getState().setPeerTyping(false)
 }
 
-/** 本轮计划序号：新计划一来，旧计划（含正在等语音合成的）就作废 */
-let planSeq = 0
-
 /** 本轮是否有排程在跑（UI 用） */
-export const hasPending = () => sendTimers.size > 0
+export const hasPending = () => processingReply || replyQueue.length > 0 || sendTimers.size > 0
 
 /** 组装一条「他发的」消息并落库 */
 function emit(
@@ -95,7 +112,7 @@ function emit(
         }
       : item.payload,
     audioDurationMs: voice ? audio!.durationMs : undefined,
-    quoteOf: quoted ? { id: quoted.id, text: quoted.text, senderId: quoted.senderId } : undefined,
+    quoteOf: quoted ? quoteRefOf(quoted) : undefined,
     emotionTags: item.emotionTags,
     latencyMs: item.delayMs,
     /** 主动消息：气泡左上角小爱心（`proactive_jobs` 的产物）；一次主动只标第一条 */
@@ -142,9 +159,8 @@ function startVoices(items: PlannedItem[]): Map<PlannedItem, Promise<VoiceAudio 
   return tasks
 }
 
-/** 发一条（语音条目先等音频）；`seq` 不等就说明这轮已经被新计划顶掉了 */
+/** 发一条（语音条目先等音频）。回复队列保证这一轮不会被下一句顶掉 */
 async function sendItem(
-  seq: number,
   item: PlannedItem,
   trace: ReplyTrace,
   plan: ReplyPlan,
@@ -165,7 +181,6 @@ async function sendItem(
   const task = voices.get(item)
   if (task) {
     audio = (await task) ?? undefined
-    if (seq !== planSeq) return
     if (!audio) {
       console.warn('[engine] 语音没合成出来 → 这条退化成文字：', item.voice?.text)
       trace.skipped = [...(trace.skipped ?? []), 'voice: 合成失败 → 这条退化成文字']
@@ -173,12 +188,50 @@ async function sendItem(
       if (s) s.detail = '命中 → 但合成失败，这条退回文字'
     }
   }
-  if (seq !== planSeq) return
   useChatStore.getState().setPeerTyping(false)
   emit(item, trace, plan, markProactive, audio)
 }
 
-/** 对我的一条消息跑一轮抽签并排程 */
+/** 一条消息的回复任务：按计划里的相对延迟依次发；发完才轮到队列里的下一句 */
+async function runReplyJob(job: ReplyJob) {
+  const { plan, token } = job
+  if (token !== runToken) return
+  const voices = startVoices(plan.items)
+  for (const item of plan.items) {
+    if (token !== runToken) return
+    const delay = Math.max(0, item.delayMs)
+    if (item.kind !== 'PAT' && plan.typing) {
+      const lead = Math.min(900, delay)
+      await sleep(delay - lead)
+      if (token !== runToken) return
+      useChatStore.getState().setPeerTyping(true)
+      await sleep(lead)
+    } else {
+      await sleep(delay)
+    }
+    if (token !== runToken) return
+    await sendItem(item, plan.trace, plan, voices)
+  }
+  useChatStore.getState().setPeerTyping(false)
+}
+
+/** 队列串行处理：连发几句，就一轮一轮回，不再把上一句顶掉 */
+async function drainReplyQueue() {
+  if (processingReply) return
+  processingReply = true
+  try {
+    while (replyQueue.length) {
+      const job = replyQueue.shift()!
+      if (job.token !== runToken) continue
+      await runReplyJob(job)
+    }
+  } finally {
+    processingReply = false
+    useChatStore.getState().setPeerTyping(false)
+  }
+}
+
+/** 对我的一条消息跑一轮抽签并排进回复队列 */
 export function respondToMyMessage(myMsg: Message) {
   const { bonded } = useAppStore.getState()
   if (!bonded) return
@@ -199,15 +252,12 @@ export function respondToMyMessage(myMsg: Message) {
     peerName: dream.nickname,
   })
 
-  // 他还在准备 → 取消旧排程，改回最新这句（避免回一句已经过期的）
-  cancelPlan()
-  const seq = planSeq
-
   // 拾取（反向）：命中就把我上一句收进他的字卡库
   if (plan.pickup && myMsg.text) useCardsStore.getState().addPicked(myMsg.text)
 
   /* 已读回执：他「点开看了」→ 我的气泡下面出现「已读」小角标；
-     命中已读不回时角标变成「已读不回」。轨迹也挂到我这条上，长按就能复盘。 */
+     命中已读不回时角标变成「已读不回」。轨迹也挂到我这条上，长按就能复盘。
+     回执在排队时也照常出现，不因为上一轮还没发完就装没看见。 */
   const [iMin] = rules.chat.replyInterval
   const readAt = Math.round(Math.min(Math.max(iMin * 400, 800), 3000))
   const readPatch: Partial<Message> = {
@@ -215,15 +265,22 @@ export function respondToMyMessage(myMsg: Message) {
     plan: plan.trace,
   }
   const markRead = () => useChatStore.getState().patchMessage(myMsg.id, readPatch)
-  if (plan.silent) {
-    laterHouse(readAt, markRead)
-  } else {
-    later(readAt, markRead)
-  }
+  if (plan.silent) laterHouse(readAt, markRead)
+  else later(readAt, markRead)
 
   if (plan.silent || plan.items.length === 0) {
     console.debug('[engine] 已读不回', plan.trace)
     return
+  }
+
+  const queued = processingReply || replyQueue.length > 0
+  if (queued) {
+    plan.trace.steps.push({
+      no: plan.trace.steps.length + 1,
+      label: '回复队列',
+      detail: '你连着发了消息 → 这条排在上一轮回复之后，不会被顶掉',
+      hit: true,
+    })
   }
 
   console.debug(
@@ -232,16 +289,8 @@ export function respondToMyMessage(myMsg: Message) {
     plan.trace,
   )
 
-  let at = 0
-  const voices = startVoices(plan.items)
-  for (const item of plan.items) {
-    at += item.delayMs
-    // 「正在输入」提前 0.9 秒出现（拍一拍不显示）
-    if (item.kind !== 'PAT' && plan.typing) {
-      later(at - 900, () => useChatStore.getState().setPeerTyping(true))
-    }
-    later(at, () => void sendItem(seq, item, plan.trace, plan, voices))
-  }
+  replyQueue.push({ msg: myMsg, plan, token: runToken })
+  void drainReplyQueue()
   void chat
 }
 
@@ -349,6 +398,13 @@ export function fireProactive(source: 'timer' | 'manual' = 'timer') {
   const chat = useChatStore.getState()
   const now = new Date()
 
+  // 正在回你的话 / 队列里还有没回完的，就先不插一条主动消息
+  if (processingReply || replyQueue.length > 0) {
+    console.debug('[engine] 主动消息：回复还没发完 → 等这一轮结束再排')
+    scheduleProactive()
+    return null
+  }
+
   if (source === 'timer') {
     if (!p.enabled) return null
 
@@ -389,6 +445,51 @@ export function fireProactive(source: 'timer' | 'manual' = 'timer') {
     proactiveNote: source === 'manual' ? '手动预览：不等间隔，立刻来一条' : undefined,
   })
 
+  /* 偶尔从最近一首网易云的歌词里截一句，当他想说的话。
+     只有真的缓存过歌词才发；没有就完全不提，不编一句「歌词」。 */
+  const lyricRule = rules.music.lyric
+  if (lyricRule?.enabled && Math.random() < lyricRule.p) {
+    const room = useAppStore.getState().room
+    const ordered = [
+      room.tracks.find((t) => t.id === room.currentId),
+      ...[...room.tracks].reverse(),
+    ].filter((t): t is NonNullable<typeof t> => Boolean(t))
+    for (const t of ordered) {
+      const src = t.source
+      const line =
+        src.kind === 'netease'
+          ? pickCachedLyric(src.songId, `proactive:${Date.now()}`, 'netease')
+          : src.kind === 'qq'
+            ? pickCachedLyric(src.songMid, `proactive:${Date.now()}`, 'qq')
+            : null
+      if (!line) continue
+      plan.items.push({
+        kind: 'TEXT',
+        text: `「${line}」`,
+        delayMs: Math.round(1500 + Math.random() * 2500),
+        payload: {
+          lyric: {
+            line,
+            title: t.title,
+            artist: t.artist,
+            ...(src.kind === 'netease'
+              ? { songId: src.songId }
+              : src.kind === 'qq'
+                ? { songMid: src.songMid }
+                : {}),
+          },
+        },
+      })
+      plan.trace.steps.push({
+        no: plan.trace.steps.length + 1,
+        label: '歌词截句',
+        detail: `从《${t.title}》里截了一句：「${line.slice(0, 18)}${line.length > 18 ? '…' : ''}」`,
+        hit: true,
+      })
+      break
+    }
+  }
+
   console.debug(
     '[engine] 主动消息',
     plan.items.map((i) => `${i.kind}: ${i.text ?? ''}`),
@@ -397,17 +498,23 @@ export function fireProactive(source: 'timer' | 'manual' = 'timer') {
 
   let at = 0
   let idx = 0
-  const seq = planSeq
+  let left = plan.items.length
   const voices = startVoices(plan.items)
   for (const item of plan.items) {
     at += item.delayMs
     const first = idx === 0
-    later(at, () => void sendItem(seq, item, plan.trace, plan, voices, first))
+    later(at, () => {
+      void (async () => {
+        await sendItem(item, plan.trace, plan, voices, first)
+        left--
+        // 最后一條发完，再按最新的聊天记录排下一条主动消息（避免还没发完又排一条）
+        if (left === 0) scheduleProactive()
+      })()
+    })
     idx++
   }
 
-  // 发完顺手排下一条（额度、免打扰都重新算过了）
-  scheduleProactive()
+  if (plan.items.length === 0) scheduleProactive()
   return plan
 }
 

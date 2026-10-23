@@ -37,7 +37,14 @@ export function MessageActionSheet({
   const removeFavorite = useAppStore((s) => s.removeFavorite)
 
   const canRecall = mine && message.status !== 'RECALLED'
-  const canQuote = !mine && Boolean(message.text)
+  /** 图片 / 表情包 / 歌卡也可以引用；系统提示和拍一拍不行 */
+  const canQuote =
+    !mine &&
+    message.status !== 'RECALLED' &&
+    message.kind !== 'SYSTEM' &&
+    message.kind !== 'PAT' &&
+    message.kind !== 'CALL_EVENT' &&
+    Boolean(message.text || message.payload?.url || message.payload?.cover)
   /** 他发的话（文字 / 字卡 / 图片 / 语音）都可以问本意；系统提示和拍一拍不问 */
   const canAskMeaning =
     !mine &&

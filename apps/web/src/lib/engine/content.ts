@@ -22,11 +22,37 @@ import type {
 } from '@/types'
 
 /** 取他的短句池：自定义 / 拾取优先（那才是他「平时怎么说」），其次系统文字卡 */
-function cardLines(cards: Card[]): string[] {
-  const ok = (c: Card) => c.enabled && c.type === 'TEXT' && !c.noFreeSentence
+export function cardLines(cards: Card[]): string[] {
+  /** 这里是要「原样引用」一句字卡，不是自由造句；
+      所以即使系统卡标了「禁止自由造句」，也可以把原句拿进日记 / 信 / 朋友圈。 */
+  const ok = (c: Card) => c.enabled && c.type === 'TEXT' && Boolean((c.text ?? '').trim())
   const len = (c: Card) => (c.text ?? '').length
   const pool = [...cards.filter((c) => ok(c) && c.source !== 'SYSTEM'), ...cards.filter((c) => ok(c) && c.source === 'SYSTEM')]
   return pool.filter((c) => len(c) >= 4 && len(c) <= 22).map((c) => (c.text ?? '').trim())
+}
+
+/** 字卡库里的真实配图（朋友圈 / 信 / 日记都从这里抽，不再用占位色块） */
+export function cardImages(cards: Card[]): string[] {
+  return [
+    ...new Set(
+      cards
+        .filter((c) => c.enabled && c.type === 'IMAGE' && typeof c.mediaUrl === 'string' && c.mediaUrl.trim())
+        .map((c) => c.mediaUrl!.trim())
+        .filter((u) => /^(https?:|data:|blob:)/i.test(u)),
+    ),
+  ]
+}
+
+/** 抽 1~n 句不重复的字卡（空库返回空数组） */
+export function drawCards(cards: Card[], count = 1): string[] {
+  const lines = cardLines(cards)
+  const out: string[] = []
+  while (out.length < count && lines.length) {
+    const idx = Math.floor(Math.random() * lines.length)
+    const [line] = lines.splice(idx, 1)
+    if (line && !out.includes(line)) out.push(line)
+  }
+  return out
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s)
@@ -88,9 +114,6 @@ const MUSIC = [
   { title: '《虹》 - 手嶌葵', url: '#' },
 ]
 
-/** 配图占位色块（本机没有真实图库，用配色块占位，不假装有图） */
-const IMAGE_TINTS = ['#cfe4ff', '#e4f2ff', '#dbeafe', '#eef6ff']
-
 const fill = (tpl: string, slots: Record<string, string>) =>
   tpl.replace(/\{(\w+)\}/g, (_, k: string) => slots[k] ?? '')
 
@@ -104,10 +127,29 @@ export function makeMoment(opts: {
   const { dream, me, cards } = opts
   const lines = cardLines(cards)
   const slots = { me: me.nickname, dream: dream.nickname, card: lines.length ? pick(lines) : '你回来的时候我会在' }
-  const text = fill(pick(MOMENT_TEMPLATES), slots)
 
-  // 偶尔配图 / 分享音乐（不是每条都有，更像真人）
-  const images = Math.random() < 0.35 ? [pick(IMAGE_TINTS), ...(Math.random() < 0.4 ? [pick(IMAGE_TINTS)] : [])] : []
+  /**
+   * 正文优先从字卡库抽。
+   * 以前只有极少数模板会带 `{card}`，看起来还是模板；现在 65% 直接拿 1~2 句字卡当正文，
+   * 35% 才用模板（模板里也可能含字卡），至少让「他说的话」真的来自他的库。
+   */
+  let text: string
+  if (lines.length && Math.random() < 0.65) {
+    const picked = drawCards(cards, Math.random() < 0.3 ? 2 : 1)
+    const lead = pick(['今天想记一句：', '忽然想起：', '留在今天：', '这句话今天一直在脑子里：', ''])
+    text = `${lead}${picked.map((line) => `「${line}」`).join('')}`.trim()
+  } else {
+    text = fill(pick(MOMENT_TEMPLATES), slots)
+  }
+
+  // 配图也从字卡库抽；没有真图就不配（不再用色块假装照片）
+  const imagePool = cardImages(cards)
+  const firstImage = imagePool.length && Math.random() < 0.55 ? pick(imagePool) : ''
+  const secondPool = imagePool.filter((u) => u !== firstImage)
+  const images =
+    firstImage
+      ? [firstImage, ...(secondPool.length && Math.random() < 0.3 ? [pick(secondPool)] : [])]
+      : []
   const music = Math.random() < 0.15 ? pick(MUSIC) : undefined
 
   return {
@@ -168,6 +210,14 @@ const LETTER_CLOSINGS = [
   '天冷了，记得加衣服。',
   '下次见面，我把汤煮好。',
   '写到这里，忽然又有点舍不得收笔。',
+]
+
+/** 信里直接引用字卡的几种说法（让信真的有「他平时会说的话」） */
+const LETTER_CARD_LINES = [
+  '我最近常想起一句：「{card}」。',
+  '今天想把这句话写给你：「{card}」。',
+  '有句话一直没找到地方说：「{card}」。',
+  '写到这里，脑子里忽然冒出一句：「{card}」。',
 ]
 
 const LETTER_TITLES = [
@@ -239,6 +289,14 @@ export function makeLetter(opts: {
     if (t.length >= 2 && t.length <= 20) paras.push(`你上次说「${t}」，我一直在想。`)
   }
 
+  // 从字卡库抽 1~2 句，直接成为信里的正文（不是只给模板做点缀）
+  if (lines.length && Math.random() < 0.8) {
+    const picked = drawCards(cards, Math.random() < 0.25 ? 2 : 1)
+    for (const line of picked) {
+      paras.push(fix(fill(pick(LETTER_CARD_LINES), { ...slots, card: line })))
+    }
+  }
+
   // 打乱后依次加，直到够长（超出上限就停手）
   const pool = [...LETTER_BODIES].sort(() => Math.random() - 0.5)
   let len = paras.join('').length
@@ -259,6 +317,15 @@ export function makeLetter(opts: {
     `—— ${dream.nickname}`,
   ].join('\n')
 
+  // 随信附一张字卡库里的真图（没有图就不附，不放占位色块）
+  const imagePool = cardImages(cards)
+  const firstImage = imagePool.length && Math.random() < 0.45 ? pick(imagePool) : ''
+  const secondPool = imagePool.filter((u) => u !== firstImage)
+  const images =
+    firstImage
+      ? [firstImage, ...(secondPool.length && Math.random() < 0.2 ? [pick(secondPool)] : [])]
+      : undefined
+
   return {
     id: nid('l'),
     fromId: dream.id,
@@ -268,6 +335,7 @@ export function makeLetter(opts: {
     status: 'UNREAD',
     replyToId: replyTo?.id,
     annotations: [],
+    images,
     proactive: opts.proactive,
     createdAt: new Date().toISOString(),
   }

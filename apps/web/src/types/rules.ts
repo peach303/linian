@@ -143,6 +143,8 @@ export interface RuleConfig {
     listenMin: Range2
     /** 他回推一首歌给我 */
     shareBack: ProbToggle
+    /** 他主动发消息时，偶尔从歌词里截一句 */
+    lyric: ProbToggle
     /** 他主动邀请我一起听 */
     inviteMe: ProbToggle & { cooldownMin: number }
   }
@@ -205,6 +207,8 @@ export interface RuleConfig {
     imageP: number
     /** 推卡片时配一句真人口吻的附言 */
     captionP: number
+    /** 搜索时效：oneDay / oneWeek / oneMonth / oneYear / noLimit */
+    freshness: string
   }
 
   companion: {

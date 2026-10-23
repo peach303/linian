@@ -1,4 +1,5 @@
 import { API_BASE } from '@/lib/deploy'
+import { getMusicSession } from '@/lib/musicAuth'
 import type { MusicPayload, Track } from '@/types'
 
 /**
@@ -70,18 +71,53 @@ export const neteaseSongUrl = (songId: string) => `https://music.163.com/song?id
  * 走我们自己的代理播放网易云音频。
  * 代理默认 302 到公开镜像，浏览器再直接向 CDN 请求 Range；所以首字节快、能 seek、能算真实播放时长。
  */
-export const neteaseStreamUrl = (songId: string) =>
-  `${API_BASE}/music/audio?id=${encodeURIComponent(songId)}`
+export const neteaseStreamUrl = (songId: string) => {
+  const s = getMusicSession()
+  const q = new URLSearchParams({ id: songId })
+  if (s?.provider === 'netease') q.set('session', s.token)
+  return `${API_BASE}/music/audio?${q.toString()}`
+}
 
 /** 镜像/代理都不通时，浏览器再试一次网易云官方外链（手机网络通常能连） */
 export const neteaseFallbackUrl = (songId: string) =>
   `https://music.163.com/song/media/outer/url?id=${encodeURIComponent(songId)}.mp3`
 
+/* ───────────────────────── QQ 音乐 ───────────────────────── */
+
+/** 从 QQ 音乐分享 / songDetail 链接里抠 songmid */
+export function qqSongMid(input: string): string | null {
+  const s = input.trim()
+  // 裸 songmid 必须同时有字母和数字（避免把普通英文单词当歌）
+  if (/^(?=.*\d)(?=.*[A-Za-z])[0-9A-Za-z]{12,20}$/.test(s)) return s
+  const m =
+    s.match(/songDetail\/([0-9A-Za-z]{10,20})/) ??
+    s.match(/[?&]songmid=([0-9A-Za-z]{10,20})/) ??
+    s.match(/[?&]mid=([0-9A-Za-z]{10,20})/)
+  return m ? m[1] : null
+}
+
+/** QQ 音乐也走代理；登录后代理会用 Cookie 换 vkey，VIP 曲目才拿得到地址 */
+export const qqStreamUrl = (songMid: string) => {
+  const s = getMusicSession()
+  const q = new URLSearchParams({ mid: songMid })
+  if (s?.provider === 'qq') q.set('session', s.token)
+  return `${API_BASE}/music/audio?${q.toString()}`
+}
+
 /** 网易云曲目的展示封面（没有就退回 emoji） */
 export const neteaseCoverEmoji = '🎧'
 
 export interface ResolvedSong {
+  provider?: 'netease'
   songId: string
+  title: string
+  artist: string
+  cover?: string
+}
+
+export interface ResolvedQQSong {
+  provider: 'qq'
+  songMid: string
   title: string
   artist: string
   cover?: string
@@ -99,6 +135,27 @@ export async function resolveNetease(input: string): Promise<ResolvedSong | null
     if (!j?.songId) return null
     return {
       songId: String(j.songId),
+      title: j.title ?? '',
+      artist: j.artist ?? '',
+      cover: j.cover,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** QQ 音乐：让代理解析出歌名 / 歌手 / 封面 */
+export async function resolveQQ(input: string): Promise<ResolvedQQSong | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/music/resolve?provider=qq&input=${encodeURIComponent(input)}`,
+    )
+    if (!res.ok) return null
+    const j = (await res.json()) as Partial<ResolvedQQSong> | null
+    if (!j?.songMid) return null
+    return {
+      provider: 'qq',
+      songMid: String(j.songMid),
       title: j.title ?? '',
       artist: j.artist ?? '',
       cover: j.cover,
@@ -126,6 +183,7 @@ export const trackFromSong = (song: Song, addedBy: 'me' | 'him'): Track => ({
 /** 能不能真的出声（本机文件 / 直链 / 代理音频流可以；旧网易云记录交给官方播放器；只有歌名的播不了） */
 export const playableKind = (t: Track): 'audio' | 'netease' | 'none' => {
   if (t.source.kind === 'netease') return t.source.streamUrl ? 'audio' : 'netease'
+  if (t.source.kind === 'qq') return 'audio'
   if (t.source.kind === 'local') return 'audio'
   if (t.source.kind === 'url') return t.source.url ? 'audio' : 'none'
   return 'none'
